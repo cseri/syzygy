@@ -36,6 +36,22 @@
 namespace instrument {
 namespace transforms {
 
+enum RuntimeAsanSimulationMode
+{
+  //no simulation
+  NORMAL = 0,
+  //
+  NOPS_PLACEHOLDER,
+  //
+  JMP_PLACEHOLDER,
+  //
+  REDIRECT_FUNCTIONS,
+  //
+  REDIRECT_FUNCTIONS_V2,
+  //
+  UNALTERED,
+};
+
 // This class implements the transformation applied to each basic block.
 class AsanBasicBlockTransform
     : public block_graph::transforms::NamedBasicBlockSubGraphTransformImpl<
@@ -83,7 +99,8 @@ class AsanBasicBlockTransform
       debug_friendly_(false),
       use_liveness_analysis_(false),
       remove_redundant_checks_(false),
-      instrumentation_rate_(1.0) {
+      instrumentation_rate_(1.0),
+      rt_sim_mode_(NORMAL) {
     DCHECK(check_access_hooks != NULL);
   }
 
@@ -106,6 +123,11 @@ class AsanBasicBlockTransform
   double instrumentation_rate() const { return instrumentation_rate_; }
   void set_instrumentation_rate(double instrumentation_rate);
   // @}
+
+  RuntimeAsanSimulationMode rt_sim_mode() const { return rt_sim_mode_; }
+  void set_rt_sim_mode(RuntimeAsanSimulationMode rt_sim_mode) {
+    rt_sim_mode_ = rt_sim_mode;
+  }
 
   // The transform name.
   static const char kTransformName[];
@@ -130,6 +152,10 @@ class AsanBasicBlockTransform
   bool InstrumentBasicBlock(block_graph::BasicCodeBlock* basic_block,
                             StackAccessMode stack_mode,
                             BlockGraph::ImageFormat image_format);
+  bool InstrumentBasicBlock(block_graph::BasicCodeBlock* basic_block,
+                            StackAccessMode stack_mode,
+                            BlockGraph::ImageFormat image_format,
+                            bool& wasInstrumented);
 
  private:
   // Liveness analysis and liveness information for this subgraph.
@@ -154,6 +180,8 @@ class AsanBasicBlockTransform
   // Controls the rate at which reads/writes are instrumented. This is
   // implemented using random sampling.
   double instrumentation_rate_;
+
+  RuntimeAsanSimulationMode rt_sim_mode_;
 
   DISALLOW_COPY_AND_ASSIGN(AsanBasicBlockTransform);
 };
@@ -213,6 +241,11 @@ class AsanTransform
   // The instrumentation rate must be in the range [0, 1], inclusive.
   double instrumentation_rate() const { return instrumentation_rate_; }
   void set_instrumentation_rate(double instrumentation_rate);
+
+  RuntimeAsanSimulationMode rt_sim_mode() const { return rt_sim_mode_; }
+  void set_rt_sim_mode(RuntimeAsanSimulationMode rt_sim_mode) {
+    rt_sim_mode_ = rt_sim_mode;
+  }
 
   // Asan RTL parameters.
   const common::InflatedAsanParameters* asan_parameters() const {
@@ -295,6 +328,8 @@ class AsanTransform
   // Block containing any injected runtime parameters. Valid in PE mode after
   // a successful PostBlockGraphIteration. This is a unittesting seam.
   block_graph::BlockGraph::Block* asan_parameters_block_;
+
+  RuntimeAsanSimulationMode rt_sim_mode_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(AsanTransform);

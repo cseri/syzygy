@@ -628,6 +628,10 @@ bool MergeContext::InitializeBlockLayout(const BasicBlockOrdering& order,
     if (bb->alignment() > new_block->alignment())
       new_block->set_alignment(bb->alignment());
 
+    if (bb->magic_atomic_twobyte_alignment()) {
+      new_block->set_magic_atomic_twobyte_alignment(true);
+    }
+
     // Create and initialize the layout info for this block.
     DCHECK(layout_info_.find(bb) == layout_info_.end());
 
@@ -780,6 +784,12 @@ bool MergeContext::GenerateBlockLayout(const BasicBlockOrdering& order) {
       BasicBlockLayoutInfo& info = FindLayoutInfo(*it);
       next_block_start = common::AlignUp(next_block_start,
                                          info.basic_block->alignment());
+
+      if (info.basic_block->magic_atomic_twobyte_alignment()) {
+        //DCHECK(false);
+        next_block_start = common::AlignUp(next_block_start, 2);
+      }
+
       info.start_offset = next_block_start;
 
       if (new_block == NULL)

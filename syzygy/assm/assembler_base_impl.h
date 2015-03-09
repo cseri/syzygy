@@ -716,6 +716,13 @@ void AssemblerBase<ReferenceType>::jmp(const Operand& dst) {
 }
 
 template <class ReferenceType>
+void AssemblerBase<ReferenceType>::cc() {
+  InstructionBuffer instr(this);
+
+  instr.EmitOpCodeByte(0xCC);
+}
+
+template <class ReferenceType>
 void AssemblerBase<ReferenceType>::l(LoopCode lc, const Immediate& dst) {
   DCHECK_EQ(kSize8Bit, dst.size());
   DCHECK_LE(0, lc);

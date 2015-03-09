@@ -56,6 +56,7 @@ class AsanInstrumenter : public InstrumenterWithAgent {
   bool use_liveness_analysis_;
   double instrumentation_rate_;
   bool asan_rtl_options_;
+  instrument::transforms::RuntimeAsanSimulationMode rt_sim_mode_;
   // @}
 
   // Valid if asan_rtl_options_ is true.

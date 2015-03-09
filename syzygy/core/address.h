@@ -117,6 +117,12 @@ template <AddressType type> class AddressImpl {
     return (value_ % alignment) == 0;
   }
 
+  AddressImpl<type> MagicAlign() const {
+    // TODO write comment
+    uint32 value = value_ % 4 == 3 ? value_ + 1 : value_;
+    return AddressImpl<type>(value);
+  }
+
   // Determines the address alignment. If the value of the address is 0 then we
   // return the maximum alignment for a 32-bit address (0x80000000).
   // @returns the alignment of the address.

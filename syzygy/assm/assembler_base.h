@@ -86,7 +86,13 @@ class AssemblerBase {
   void call(const Operand& dst);
   // @}
 
- protected:
+  // @name Interrupt instructions.
+  // @{
+  //void int(/* ??? */);
+  void cc();
+  // @}
+
+protected:
   // @name Control flow instructions.
   // These instructions are protected, as they're not appropriate to expose
   // for all assembler subclasses.

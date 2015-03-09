@@ -578,6 +578,11 @@ class BasicBlock {
     alignment_ = alignment;
   }
 
+  bool magic_atomic_twobyte_alignment() const { return magic_atomic_twobyte_alignment_; }
+  void set_magic_atomic_twobyte_alignment(bool magic_atomic_twobyte_alignment) {
+    magic_atomic_twobyte_alignment_ = magic_atomic_twobyte_alignment;
+  }
+
   Offset offset() const { return offset_; }
   void set_offset(Offset offset) { offset_ = offset; }
 
@@ -620,6 +625,9 @@ class BasicBlock {
 
   // The alignment of this basic block.
   size_t alignment_;
+
+  // Use magic alignment for atomic two-byte writes
+  bool magic_atomic_twobyte_alignment_;
 
   // The offset of this basic block in the original block. Set to the offset
   // of the first byte the basic block originated from during decomposition.

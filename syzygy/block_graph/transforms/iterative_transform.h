@@ -111,6 +111,9 @@ bool IterativeTransformImpl<DerivedType>::TransformBlockGraph(
     return false;
   }
 
+  LOG(ERROR) << "Iterating on BlockGraph starts.";
+  long long start_time = GetTickCount64();
+
   bool result = IterateBlockGraph(
       base::Bind(&DerivedType::OnBlock,
                  base::Unretained(self),
@@ -120,6 +123,9 @@ bool IterativeTransformImpl<DerivedType>::TransformBlockGraph(
     LOG(ERROR) << "Iteration failed for \"" << name() << "\" transform.";
     return false;
   }
+
+  long long end_time = GetTickCount64();
+  LOG(ERROR) << "Iterating on BlockGraph ends: " << end_time - start_time << " ms";
 
   if (!self->PostBlockGraphIteration(policy, block_graph, header_block)) {
     LOG(ERROR) << "PostBlockGraphIteration failed for \"" << name()

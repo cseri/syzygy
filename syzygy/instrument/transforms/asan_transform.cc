@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <list>
 #include <vector>
+//#include <fstream>
 
 #include "base/logging.h"
 #include "base/rand_util.h"
@@ -271,13 +272,26 @@ bool DecodeMemoryAccess(const Instruction& instr,
 
 // Use @p bb_asm to inject a hook to @p hook to instrument the access to the
 // address stored in the operand @p op.
-void InjectAsanHook(BasicBlockAssembler* bb_asm,
+void InjectAsanHook(BasicBlockAssembler* bb_asm_input,
                     const AsanBasicBlockTransform::MemoryAccessInfo& info,
                     const BasicBlockAssembler::Operand& op,
                     BlockGraph::Reference* hook,
                     const LivenessAnalysis::State& state,
-                    BlockGraph::ImageFormat image_format) {
+                    BlockGraph::ImageFormat image_format,
+                    const RuntimeAsanSimulationMode rt_sim_mode_) {
   DCHECK(hook != NULL);
+
+  BasicBlock::Instructions instructions_;
+  std::unique_ptr<BasicBlockAssembler> bb_asm_2;
+  bool use_mock_instructions =
+    NOPS_PLACEHOLDER == rt_sim_mode_ ||
+    JMP_PLACEHOLDER == rt_sim_mode_;
+  if (use_mock_instructions) {
+    bb_asm_2.reset(new BasicBlockAssembler(instructions_.end(), &instructions_));
+  }
+
+  BasicBlockAssembler* bb_asm =
+    use_mock_instructions ? bb_asm_2.get() : bb_asm_input;
 
   // Determine which kind of probe to inject.
   //   - The standard load/store probe assume the address is in EDX.
@@ -301,6 +315,27 @@ void InjectAsanHook(BasicBlockAssembler* bb_asm,
     // In COFF images the hooks are brought in as symbols, so they are direct
     // references.
     bb_asm->call(Immediate(hook->referenced(), hook->offset()));
+  }
+
+
+  if (NOPS_PLACEHOLDER == rt_sim_mode_) {
+    int sz = 0;
+    for (const Instruction& i : instructions_) {
+      sz += i.size();
+    }
+    bb_asm_input->nop(sz);
+  }
+  if (JMP_PLACEHOLDER == rt_sim_mode_) {
+    int sz = 0;
+    for (const Instruction& i : instructions_) {
+      sz += i.size();
+    }
+    DCHECK_GE(sz, 2);
+    bb_asm_input->jmp(Immediate(sz)); //TODO check if this is a 2-byte jump!
+    //fails with endless loop if sz < 2 - intentional
+    for (int i = 0; i != sz - 2; ++i) {
+      bb_asm_input->cc();
+    }
   }
 }
 
@@ -889,10 +924,25 @@ const char AsanBasicBlockTransform::kTransformName[] =
     "SyzyAsanBasicBlockTransform";
 
 bool AsanBasicBlockTransform::InstrumentBasicBlock(
+  BasicCodeBlock* basic_block,
+  StackAccessMode stack_mode,
+  BlockGraph::ImageFormat image_format) {
+  bool b;
+  return InstrumentBasicBlock(basic_block, stack_mode, image_format, b);
+}
+  
+bool AsanBasicBlockTransform::InstrumentBasicBlock(
     BasicCodeBlock* basic_block,
     StackAccessMode stack_mode,
-    BlockGraph::ImageFormat image_format) {
+    BlockGraph::ImageFormat image_format,
+    bool& wasInstrumented) {
   DCHECK_NE(reinterpret_cast<BasicCodeBlock*>(NULL), basic_block);
+
+  //no basic block instrumentation in this mode(s)
+  if (rt_sim_mode_ == REDIRECT_FUNCTIONS)
+    return true;
+  if (rt_sim_mode_ == UNALTERED)
+    return true;
 
   if (instrumentation_rate_ == 0.0)
     return true;
@@ -1035,7 +1085,13 @@ bool AsanBasicBlockTransform::InstrumentBasicBlock(
     }
 
     // Instrument this instruction.
-    InjectAsanHook(&bb_asm, info, operand, &hook->second, state, image_format);
+    wasInstrumented = true;
+    if (rt_sim_mode_ == REDIRECT_FUNCTIONS_V2) {
+      //This would have been instrumented.
+      //Record that and bail out
+      return true;
+    }
+    InjectAsanHook(&bb_asm, info, operand, &hook->second, state, image_format, rt_sim_mode_);
   }
 
   DCHECK(iter_state == states.end());
@@ -1057,6 +1113,17 @@ bool AsanBasicBlockTransform::TransformBasicBlockSubGraph(
   DCHECK(block_graph != NULL);
   DCHECK(subgraph != NULL);
 
+  /*{ //saved basic block subgraph to files
+    static int i = 0;
+    ++i;
+    if (i < 100) {
+      std::string out;
+      subgraph->ToString(&out);
+      std::ofstream o("subgraph" + std::to_string(i) + ".txt");
+      o << out;
+    }
+  }*/
+
   // Perform a global liveness analysis.
   if (use_liveness_analysis_)
     liveness_.Analyze(subgraph);
@@ -1072,15 +1139,56 @@ bool AsanBasicBlockTransform::TransformBasicBlockSubGraph(
     stack_mode = kSafeStackAccess;
 
   // Iterates through each basic block and instruments it.
+  bool wasIntrumented = false;
   BasicBlockSubGraph::BBCollection::iterator it =
       subgraph->basic_blocks().begin();
   for (; it != subgraph->basic_blocks().end(); ++it) {
     BasicCodeBlock* bb = BasicCodeBlock::Cast(*it);
     if (bb != NULL &&
-        !InstrumentBasicBlock(bb, stack_mode, block_graph->image_format())) {
+        !InstrumentBasicBlock(bb, stack_mode, block_graph->image_format(), wasIntrumented)) {
       return false;
     }
   }
+
+  /***/
+  if (rt_sim_mode_ == REDIRECT_FUNCTIONS || (rt_sim_mode_ == REDIRECT_FUNCTIONS_V2 && wasIntrumented)) {
+
+    BasicBlockSubGraph::BlockDescriptionList& x = subgraph->block_descriptions();
+    DCHECK(x.size() == 1);
+    BasicBlockSubGraph::BlockDescription& block_description = x.front();
+    BasicBlock* bb_old_front = block_description.basic_block_order.front();
+    //bb_old_front->set_alignment(2);
+    //bb_old_front->alignment();
+    bb_old_front->set_magic_atomic_twobyte_alignment(true);
+    /**/
+    //block_description.alignment;
+    
+    /*alternative code:*/
+    BasicCodeBlock* bb_old_front_code = BasicCodeBlock::Cast(bb_old_front);
+    BasicBlockAssembler bb_asm(bb_old_front_code->instructions().begin(), &bb_old_front_code->instructions());
+    bb_asm.nop(2);
+
+    /*BasicCodeBlock* bb = subgraph->AddBasicCodeBlock("foo");
+    block_description.basic_block_order.push_front(bb);
+
+    BasicBlockAssembler bb_asm(bb->instructions().begin(), &bb->instructions());
+    bb_asm.nop(2);*/
+    //bb->successors;
+    //bb->successors().push_back(bb_old_front);
+
+    // Condense into a block.
+    /*BlockBuilder block_builder(block_graph);
+    if (!block_builder.Merge(subgraph)) {
+      LOG(ERROR) << "Failed to build thunk block.";
+      return NULL;
+    }*/
+
+    // Exactly one new block should have been created.
+    //DCHECK_EQ(1u, block_builder.new_blocks().size());
+    //BlockGraph::Block* thunk = block_builder.new_blocks().front();
+    //*reference = BlockGraph::Reference(BlockGraph::ABSOLUTE_REF, 4, thunk, 0, 0);
+  }
+
   return true;
 }
 
@@ -1099,7 +1207,8 @@ AsanTransform::AsanTransform()
       instrumentation_rate_(1.0),
       asan_parameters_(NULL),
       check_access_hooks_ref_(),
-      asan_parameters_block_(NULL) {
+      asan_parameters_block_(NULL),
+      rt_sim_mode_(NORMAL) {
 }
 
 void AsanTransform::set_instrumentation_rate(double instrumentation_rate) {
@@ -1119,8 +1228,8 @@ bool AsanTransform::PreBlockGraphIteration(
 
   // Ensure that this image has not already been instrumented.
   if (block_graph->FindSection(common::kThunkSectionName)) {
-    LOG(ERROR) << "The image is already instrumented.";
-    return false;
+    LOG(INFO) << "The image is already instrumented - but the program has been hacked.";
+    //return false;
   }
 
   AccessHookParamVector access_hook_param_vec;
@@ -1245,6 +1354,7 @@ bool AsanTransform::OnBlock(const TransformPolicyInterface* policy,
   transform.set_remove_redundant_checks(remove_redundant_checks());
   transform.set_filter(filter());
   transform.set_instrumentation_rate(instrumentation_rate_);
+  transform.set_rt_sim_mode(rt_sim_mode_);
 
   if (!ApplyBasicBlockSubGraphTransform(
           &transform, policy, block_graph, block, NULL)) {
@@ -1263,10 +1373,10 @@ bool AsanTransform::PostBlockGraphIteration(
   DCHECK(header_block != NULL);
 
   if (block_graph->image_format() == BlockGraph::PE_IMAGE) {
-    if (!PeInterceptFunctions(kAsanIntercepts, policy, block_graph,
+    /*if (!PeInterceptFunctions(kAsanIntercepts, policy, block_graph,
                               header_block)) {
       return false;
-    }
+    }*/
 
     if (!PeInjectAsanParameters(policy, block_graph, header_block))
       return false;
@@ -1289,7 +1399,7 @@ bool AsanTransform::PeInterceptFunctions(
     const TransformPolicyInterface* policy,
     BlockGraph* block_graph,
     BlockGraph::Block* header_block) {
-  DCHECK_NE(reinterpret_cast<AsanIntercept*>(NULL), intercepts);
+  /*DCHECK_NE(reinterpret_cast<AsanIntercept*>(NULL), intercepts);
   DCHECK_NE(reinterpret_cast<TransformPolicyInterface*>(NULL), policy);
   DCHECK_NE(reinterpret_cast<BlockGraph*>(NULL), block_graph);
   DCHECK_NE(reinterpret_cast<BlockGraph::Block*>(NULL), header_block);
@@ -1301,7 +1411,7 @@ bool AsanTransform::PeInterceptFunctions(
   // Keeps track of all imported modules with imports that we intercept.
   ScopedVector<ImportedModule> imported_modules;
 
-  ImportedModule asan_rtl(asan_dll_name_, kDateInThePast);
+  //ImportedModule asan_rtl(asan_dll_name_, kDateInThePast);
 
   // Determines what PE imports need to be intercepted, adding them to
   // |asan_rtl| and |import_name_index_map|.
@@ -1318,7 +1428,7 @@ bool AsanTransform::PeInterceptFunctions(
 
   // Keep track of how many import redirections are to be performed. This allows
   // a minor optimization later on when there are none to be performed.
-  size_t import_redirection_count = asan_rtl.size();
+  size_t import_redirection_count = 0;// asan_rtl.size();
 
   // Find statically linked function blocks to intercept, adding them to
   // |asan_rtl| and |import_name_index_map|.
@@ -1365,7 +1475,7 @@ bool AsanTransform::PeInterceptFunctions(
   }
 
   // Finally, redirect all references to intercepted functions.
-  pe::RedirectReferences(reference_redirect_map);
+  pe::RedirectReferences(reference_redirect_map);*/
 
   return true;
 }

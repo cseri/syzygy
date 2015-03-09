@@ -692,7 +692,8 @@ BasicBlock::BasicBlock(BasicBlockSubGraph* subgraph,
       id_(id),
       type_(type),
       offset_(kNoOffset),
-      is_padding_(false) {
+      is_padding_(false),
+      magic_atomic_twobyte_alignment_(false) {
   DCHECK(subgraph_ != NULL);
 }
 

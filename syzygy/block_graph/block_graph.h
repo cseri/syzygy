@@ -838,6 +838,17 @@ class BlockGraph::Block {
   const uint8* data_;
   // Size of the above.
   size_t data_size_;
+
+public:
+
+  bool magic_atomic_twobyte_alignment() const { return magic_atomic_twobyte_alignment_; }
+  void set_magic_atomic_twobyte_alignment(bool magic_atomic_twobyte_alignment) {
+    magic_atomic_twobyte_alignment_ = magic_atomic_twobyte_alignment;
+  }
+
+private:
+  bool magic_atomic_twobyte_alignment_ = false;
+
 };
 
 // A graph address space endows a graph with a non-overlapping ordering

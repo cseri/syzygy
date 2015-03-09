@@ -84,7 +84,7 @@ bool PECoffImageLayoutBuilder::LayoutBlock(BlockGraph::Block* block) {
 }
 
 bool PECoffImageLayoutBuilder::LayoutBlock(size_t alignment,
-                                           BlockGraph::Block* block) {
+  BlockGraph::Block* block) {
   DCHECK_LT(0u, alignment);
   DCHECK(block != NULL);
   DCHECK_NE(0u, section_start_.value());
@@ -98,6 +98,11 @@ bool PECoffImageLayoutBuilder::LayoutBlock(size_t alignment,
   if (block->type() == BlockGraph::CODE_BLOCK && alignment < code_alignment_)
     alignment = code_alignment_;
   cursor_ = cursor_.AlignUp(alignment);
+
+  if (block->magic_atomic_twobyte_alignment()) {
+    cursor_ += 5;
+    cursor_ = cursor_.MagicAlign();
+  }
 
   // If we have explicit data, advance the explicit data cursor.
   if (block->data_size() > 0)

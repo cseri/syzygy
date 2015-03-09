@@ -70,6 +70,7 @@ bool AsanInstrumenter::InstrumentImpl() {
   asan_transform_->set_use_liveness_analysis(use_liveness_analysis_);
   asan_transform_->set_remove_redundant_checks(remove_redundant_checks_);
   asan_transform_->set_instrumentation_rate(instrumentation_rate_);
+  asan_transform_->set_rt_sim_mode(rt_sim_mode_);
 
   // Set up the filter if one was provided.
   if (filter.get()) {
@@ -105,6 +106,20 @@ bool AsanInstrumenter::ParseAdditionalCommandLineArguments(
   use_liveness_analysis_ = !command_line->HasSwitch("no-liveness-analysis");
   remove_redundant_checks_ = !command_line->HasSwitch("no-redundancy-analysis");
   use_interceptors_ = !command_line->HasSwitch("no-interceptors");
+  std::wstring rt_sim_mode_s = command_line->GetSwitchValueNative("rt_sim_mode");
+  if (!rt_sim_mode_s.empty()) {
+    bool fail = true;
+    if (rt_sim_mode_s == L"normal") { rt_sim_mode_ = instrument::transforms::NORMAL; fail = false; }
+    if (rt_sim_mode_s == L"nops_placeholder") { rt_sim_mode_ = instrument::transforms::NOPS_PLACEHOLDER; fail = false; }
+    if (rt_sim_mode_s == L"jmp_placeholder") { rt_sim_mode_ = instrument::transforms::JMP_PLACEHOLDER; fail = false; }
+    if (rt_sim_mode_s == L"redirect_functions") { rt_sim_mode_ = instrument::transforms::REDIRECT_FUNCTIONS; fail = false; }
+    if (rt_sim_mode_s == L"redirect_functions_v2") { rt_sim_mode_ = instrument::transforms::REDIRECT_FUNCTIONS_V2; fail = false; }
+    if (rt_sim_mode_s == L"unaltered") { rt_sim_mode_ = instrument::transforms::UNALTERED; fail = false; }
+    if (fail) {
+      LOG(ERROR) << "invalid argument for rt_sim_mode: " << rt_sim_mode_s;
+      return false;
+    }
+  }
 
   // Parse the instrumentation rate if one has been provided.
   static const char kInstrumentationRate[] = "instrumentation-rate";
