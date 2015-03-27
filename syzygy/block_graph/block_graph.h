@@ -128,6 +128,7 @@ class BlockGraph {
     UNKNOWN_IMAGE_FORMAT,
     PE_IMAGE,
     COFF_IMAGE,
+    IN_MEMORY_IMAGE,
 
     // This must always be the last entry, and kImageFormat must be kept in
     // sync with this enum.
