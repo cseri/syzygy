@@ -1265,7 +1265,7 @@ bool BlockGraph::Block::SetLabel(Offset offset, const Label& label) {
 }
 
 bool BlockGraph::Block::GetLabel(Offset offset, Label* label) const {
-  DCHECK(offset >= 0 && static_cast<size_t>(offset) <= size_);
+  //DCHECK(offset >= 0 && static_cast<size_t>(offset) <= size_);
   DCHECK(label != NULL);
 
   LabelMap::const_iterator it = labels_.find(offset);

@@ -178,8 +178,12 @@ void DecomposeImageToTextApp::DumpSubGraphToText(
       case BasicBlock::BASIC_DATA_BLOCK:
         DumpDataBBToText(block, BasicDataBlock::Cast(bb));
         break;
-
+      case BasicBlock::BASIC_END_BLOCK:
+        break;
       default:
+        LOG(ERROR) << block->name();
+        LOG(ERROR) << bb->name();
+        LOG(ERROR) << bb->type();
         NOTREACHED();
         break;
     }

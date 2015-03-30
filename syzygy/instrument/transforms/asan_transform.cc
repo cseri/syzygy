@@ -1057,6 +1057,17 @@ void AsanBasicBlockTransform::set_instrumentation_rate(
   instrumentation_rate_ = std::max(0.0, std::min(1.0, instrumentation_rate));
 }
 
+namespace {
+
+int instr_happened = 0;
+int begin_onebyte_instr = 0;
+int has_referrer_to_start = 0;
+int both = 0;
+int begin_with_data_block = 0;
+int begin_no_instructions = 0;
+
+}  // namespace
+
 bool AsanBasicBlockTransform::TransformBasicBlockSubGraph(
     const TransformPolicyInterface* policy,
     BlockGraph* block_graph,
@@ -1089,6 +1100,52 @@ bool AsanBasicBlockTransform::TransformBasicBlockSubGraph(
       return false;
     }
   }
+
+  if (instrumentation_happened()) {
+    ++instr_happened;
+    int x = 0;
+
+    auto* firstbb2 = *subgraph->basic_blocks().begin();
+    if (firstbb2->type() != BasicBlock::BASIC_CODE_BLOCK) {
+      ++begin_with_data_block;
+    } else {
+      BasicCodeBlock* firstbb = static_cast<BasicCodeBlock*>(firstbb2);
+      bool reachable_start = false;
+      for (auto it = ++subgraph->basic_blocks().begin(); it != subgraph->basic_blocks().end(); ++it) {
+        auto* currbb2 = *it;
+        if (currbb2->type() == BasicBlock::BASIC_CODE_BLOCK) {
+          BasicCodeBlock* currbb = static_cast<BasicCodeBlock*>(currbb2);
+          for (auto& succ : currbb->successors()) {
+            auto* succbb = succ.reference().basic_block();
+            if (succbb == firstbb) {
+              reachable_start = true;
+            }
+          }
+        }
+      }
+      if (reachable_start) {
+        ++has_referrer_to_start;
+        ++x;
+        LOG(ERROR) << "  has_referrer_to_start: " << subgraph->original_block()->name();
+      }
+      if (firstbb->instructions().empty()) {
+        ++begin_no_instructions;
+      } else {
+        if (firstbb->instructions().front().size() == 1) {
+          if (begin_onebyte_instr < 20) {
+            LOG(ERROR) << "  begin_onebyte_instr: " << subgraph->original_block()->name();
+          }
+          ++begin_onebyte_instr;
+          ++x;
+        }
+      }
+      if (2 == x) {
+        ++both;
+      }
+    }
+
+  }
+
   return true;
 }
 
@@ -1266,6 +1323,14 @@ bool AsanTransform::PostBlockGraphIteration(
     const TransformPolicyInterface* policy,
     BlockGraph* block_graph,
     BlockGraph::Block* header_block) {
+
+  LOG(ERROR) << "instr_happened: " << instr_happened;
+  LOG(ERROR) << "begin_onebyte_instr: " << begin_onebyte_instr;
+  LOG(ERROR) << "has_referrer_to_start: " << has_referrer_to_start;
+  LOG(ERROR) << "both: " << both;
+  LOG(ERROR) << "begin_with_data_block: " << begin_with_data_block;
+  LOG(ERROR) << "begin_no_instructions: " << begin_no_instructions;
+
   DCHECK(policy != NULL);
   DCHECK(block_graph != NULL);
   DCHECK(header_block != NULL);
