@@ -36,8 +36,11 @@ class AsanInstrumenter : public InstrumenterWithAgent {
   ~AsanInstrumenter() { }
 
  protected:
-  // The name of the agent for this mode of instrumentation.
+  // The name of the agent for Asan instrumentation.
   static const char kAgentDllAsan[];
+
+  // The name of the agent for hot patching Asan instrumentation.
+  static const char kAgentDllHpAsan[];
 
   // @name InstrumenterWithAgent overrides.
   // @{
@@ -56,6 +59,7 @@ class AsanInstrumenter : public InstrumenterWithAgent {
   bool use_liveness_analysis_;
   double instrumentation_rate_;
   bool asan_rtl_options_;
+  bool hot_patching_;
   // @}
 
   // Valid if asan_rtl_options_ is true.

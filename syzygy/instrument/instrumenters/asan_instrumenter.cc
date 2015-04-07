@@ -30,13 +30,15 @@ namespace instrumenters {
 
 const char AsanInstrumenter::kAgentDllAsan[] = "syzyasan_rtl.dll";
 
+const char AsanInstrumenter::kAgentDllHpAsan[] = "syzyasan_hp.dll";
+
 AsanInstrumenter::AsanInstrumenter()
     : use_interceptors_(true),
       remove_redundant_checks_(true),
       use_liveness_analysis_(true),
       instrumentation_rate_(1.0),
-      asan_rtl_options_(false) {
-  agent_dll_ = kAgentDllAsan;
+      asan_rtl_options_(false),
+      hot_patching_(false) {
 }
 
 bool AsanInstrumenter::ImageFormatIsSupported(ImageFormat image_format) {
@@ -70,6 +72,7 @@ bool AsanInstrumenter::InstrumentImpl() {
   asan_transform_->set_use_liveness_analysis(use_liveness_analysis_);
   asan_transform_->set_remove_redundant_checks(remove_redundant_checks_);
   asan_transform_->set_instrumentation_rate(instrumentation_rate_);
+  asan_transform_->set_hot_patching(hot_patching_);
 
   // Set up the filter if one was provided.
   if (filter.get()) {
@@ -105,6 +108,7 @@ bool AsanInstrumenter::ParseAdditionalCommandLineArguments(
   use_liveness_analysis_ = !command_line->HasSwitch("no-liveness-analysis");
   remove_redundant_checks_ = !command_line->HasSwitch("no-redundancy-analysis");
   use_interceptors_ = !command_line->HasSwitch("no-interceptors");
+  hot_patching_ = command_line->HasSwitch("hot-patching");
 
   // Parse the instrumentation rate if one has been provided.
   static const char kInstrumentationRate[] = "instrumentation-rate";
@@ -155,6 +159,11 @@ bool AsanInstrumenter::ParseAdditionalCommandLineArguments(
       af_transform_->set_debug_friendly(debug_friendly_);
     }
   }
+
+  // Set default agent dll name if none provided. This has to be done here
+  // because ParseCommandLine expects agent_dll_ to be filled.
+  if (agent_dll_.empty())
+    agent_dll_ = hot_patching_ ? kAgentDllHpAsan : kAgentDllAsan;
 
   return true;
 }

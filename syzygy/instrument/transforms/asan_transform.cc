@@ -32,9 +32,11 @@
 #include "syzygy/common/defs.h"
 #include "syzygy/instrument/transforms/asan_intercepts.h"
 #include "syzygy/pe/pe_utils.h"
+#include "syzygy/pe/transforms/add_hot_patching_metadata_transform.h"
 #include "syzygy/pe/transforms/coff_add_imports_transform.h"
 #include "syzygy/pe/transforms/coff_rename_symbols_transform.h"
 #include "syzygy/pe/transforms/pe_add_imports_transform.h"
+#include "syzygy/pe/transforms/pe_hot_patching_basic_block_transform.h"
 #include "third_party/distorm/files/include/mnemonics.h"
 #include "third_party/distorm/files/src/x86defs.h"
 
@@ -532,6 +534,134 @@ bool CreateHooksStub(BlockGraph* block_graph,
   return true;
 }
 
+// Creates stubs for Asan check access hooks (PE only), imports them from the
+// runtime module and adds them to the block graph.
+// @param asan_hook_stub_name Name prefix of the stubs for the asan check access
+//     functions.
+// @param use_liveness_analysis true iff we use liveness analysis.
+// @param import_module The module for which the import should be added.
+// @param check_access_hooks_ref The map where the reference to the imports
+//     should be stored.
+// @param policy The policy object restricting how the transform is applied.
+// @param block_graph The block-graph to populate.
+// @param header_block The block containing the module's DOS header of this
+//     block-graph.
+// @returns True on success, false otherwise.
+bool ImportAsanCheckAccessHooks(
+    const char* asan_hook_stub_name,
+    bool use_liveness_analysis,
+    ImportedModule* import_module,
+    AsanBasicBlockTransform::AsanHookMap* check_access_hooks_ref,
+    const TransformPolicyInterface* policy,
+    BlockGraph* block_graph,
+    BlockGraph::Block* header_block) {
+  typedef AsanBasicBlockTransform::MemoryAccessInfo MemoryAccessInfo;
+
+  AccessHookParamVector access_hook_param_vec;
+  AsanBasicBlockTransform::AsanDefaultHookMap default_stub_map;
+
+  // We only need to add stubs for PE images. COFF images use direct references,
+  // and the linker takes care of dragging in the appropriate code for us.
+  // Also, hot patching mode does not need the stubs as it will load them
+  // dynamically at runtime.
+  if (block_graph->image_format() == BlockGraph::PE_IMAGE) {
+    // Create the hook stub for read/write instructions.
+    BlockGraph::Reference read_write_hook;
+    if (!CreateHooksStub(block_graph, asan_hook_stub_name,
+                         AsanBasicBlockTransform::kReadAccess,
+                         &read_write_hook)) {
+      return false;
+    }
+
+    // Create the hook stub for strings instructions.
+    BlockGraph::Reference instr_hook;
+    if (!CreateHooksStub(block_graph, asan_hook_stub_name,
+                         AsanBasicBlockTransform::kInstrAccess,
+                         &instr_hook)) {
+      return false;
+    }
+
+    // Map each memory access kind to an appropriate stub.
+    default_stub_map[AsanBasicBlockTransform::kReadAccess] = read_write_hook;
+    default_stub_map[AsanBasicBlockTransform::kWriteAccess] = read_write_hook;
+    default_stub_map[AsanBasicBlockTransform::kInstrAccess] = instr_hook;
+    default_stub_map[AsanBasicBlockTransform::kRepzAccess] = instr_hook;
+    default_stub_map[AsanBasicBlockTransform::kRepnzAccess] = instr_hook;
+  }
+
+  // Import the hooks for the read/write accesses.
+  for (int access_size = 1; access_size <= 32; access_size *= 2) {
+    MemoryAccessInfo read_info =
+        { AsanBasicBlockTransform::kReadAccess, access_size, 0, true };
+    access_hook_param_vec.push_back(read_info);
+    if (use_liveness_analysis) {
+      read_info.save_flags = false;
+      access_hook_param_vec.push_back(read_info);
+    }
+
+    MemoryAccessInfo write_info =
+        { AsanBasicBlockTransform::kWriteAccess, access_size, 0, true };
+    access_hook_param_vec.push_back(write_info);
+    if (use_liveness_analysis) {
+      write_info.save_flags = false;
+      access_hook_param_vec.push_back(write_info);
+    }
+  }
+
+  // Import the hooks for the read/write 10-bytes accesses.
+  MemoryAccessInfo read_info_10 =
+      { AsanBasicBlockTransform::kReadAccess, 10, 0, true };
+  access_hook_param_vec.push_back(read_info_10);
+  if (use_liveness_analysis) {
+    read_info_10.save_flags = false;
+    access_hook_param_vec.push_back(read_info_10);
+  }
+
+  MemoryAccessInfo write_info_10 =
+      { AsanBasicBlockTransform::kWriteAccess, 10, 0, true };
+  access_hook_param_vec.push_back(write_info_10);
+  if (use_liveness_analysis) {
+    write_info_10.save_flags = false;
+    access_hook_param_vec.push_back(write_info_10);
+  }
+
+  // Import the hooks for strings/prefix memory accesses.
+  const _InstructionType strings[] = { I_CMPS, I_MOVS, I_STOS };
+  int strings_length = sizeof(strings)/sizeof(_InstructionType);
+
+  for (int access_size = 1; access_size <= 4; access_size *= 2) {
+    for (int inst = 0; inst < strings_length; ++inst) {
+      MemoryAccessInfo repz_inst_info = {
+         AsanBasicBlockTransform::kRepzAccess,
+         access_size,
+         strings[inst],
+         true
+      };
+      access_hook_param_vec.push_back(repz_inst_info);
+
+      MemoryAccessInfo inst_info = {
+          AsanBasicBlockTransform::kInstrAccess,
+          access_size,
+          strings[inst],
+          true
+      };
+      access_hook_param_vec.push_back(inst_info);
+    }
+  }
+
+  if (!AddAsanCheckAccessHooks(access_hook_param_vec,
+                               default_stub_map,
+                               import_module,
+                               check_access_hooks_ref,
+                               policy,
+                               block_graph,
+                               header_block)) {
+    return false;
+  }
+
+  return true;
+}
+
 // Since MSVS 2012 the implementation of the CRT _heap_init function has changed
 // and as a result the CRT defers all its allocation to the process heap.
 //
@@ -571,7 +701,7 @@ bool PatchCRTHeapInitialization(BlockGraph* block_graph,
                                 const TransformPolicyInterface* policy,
                                 BlockGraph::Block* heap_init_block,
                                 BlockGraph::Block* crtheap_block,
-                                const std::string& asan_dll_name) {
+                                const char* instrument_dll_name) {
   DCHECK_NE(static_cast<BlockGraph*>(nullptr), block_graph);
   DCHECK_NE(static_cast<BlockGraph::Block*>(nullptr), header_block);
   DCHECK_NE(static_cast<const TransformPolicyInterface*>(nullptr), policy);
@@ -589,7 +719,7 @@ bool PatchCRTHeapInitialization(BlockGraph* block_graph,
 
   // Find the asan_HeapCreate import.
   PEAddImportsTransform find_imports;
-  ImportedModule kernel32_module(asan_dll_name);
+  ImportedModule kernel32_module(instrument_dll_name);
   kernel32_module.AddSymbol("asan_HeapCreate", ImportedModule::kAlwaysImport);
   find_imports.AddModule(&kernel32_module);
   if (!find_imports.TransformBlockGraph(policy, block_graph, header_block)) {
@@ -1063,15 +1193,47 @@ bool AsanBasicBlockTransform::TransformBasicBlockSubGraph(
   return true;
 }
 
+HotPatchingAsanBasicBlockTransform::HotPatchingAsanBasicBlockTransform(
+    AsanBasicBlockTransform* asan_bb_transform)
+    : asan_bb_transform_(asan_bb_transform),
+      prepared_for_hot_patching_(false) {
+  DCHECK(asan_bb_transform_->dry_run());
+}
+
+bool HotPatchingAsanBasicBlockTransform::TransformBasicBlockSubGraph(
+    const TransformPolicyInterface* policy,
+    BlockGraph* block_graph,
+    BasicBlockSubGraph* basic_block_subgraph) {
+  prepared_for_hot_patching_ = false;
+
+  // Run Asan basic block transform in dry run mode.
+  DCHECK(asan_bb_transform_->dry_run());
+  asan_bb_transform_->TransformBasicBlockSubGraph(policy,
+                                                  block_graph,
+                                                  basic_block_subgraph);
+
+  // Prepare the block for hot patching if needed.
+  if (asan_bb_transform_->instrumentation_happened()) {
+    pe::transforms::PEHotPatchingBasicBlockTransform hp_bb_transform;
+    hp_bb_transform.TransformBasicBlockSubGraph(policy,
+                                                block_graph,
+                                                basic_block_subgraph);
+    prepared_for_hot_patching_ = true;
+  }
+
+  return true;
+}
+
 const char AsanTransform::kTransformName[] = "SyzyAsanTransform";
 
 const char AsanTransform::kAsanHookStubName[] = "asan_hook_stub";
 
 const char AsanTransform::kSyzyAsanDll[] = "syzyasan_rtl.dll";
 
+const char AsanTransform::kSyzyAsanHpDll[] = "syzyasan_hp.dll";
+
 AsanTransform::AsanTransform()
-    : asan_dll_name_(kSyzyAsanDll),
-      debug_friendly_(false),
+    : debug_friendly_(false),
       use_liveness_analysis_(false),
       remove_redundant_checks_(false),
       use_interceptors_(false),
@@ -1080,7 +1242,8 @@ AsanTransform::AsanTransform()
       check_access_hooks_ref_(),
       asan_parameters_block_(nullptr),
       heap_init_block_(nullptr),
-      crtheap_block_(nullptr) {
+      crtheap_block_(nullptr),
+      hot_patching_(false) {
 }
 
 AsanTransform::~AsanTransform() { }
@@ -1111,113 +1274,27 @@ bool AsanTransform::PreBlockGraphIteration(
   // deletes it.
   FindHeapInitAndCrtHeapBlocks(block_graph);
 
-  AccessHookParamVector access_hook_param_vec;
-  AsanBasicBlockTransform::AsanDefaultHookMap default_stub_map;
+  // Add an import entry for the Asan runtime.
+  ImportedModule import_module(instrument_dll_name(), kDateInThePast);
 
   // Find static intercepts in PE images before the transform so that OnBlock
   // can skip them.
   if (block_graph->image_format() == BlockGraph::PE_IMAGE)
     PeFindStaticallyLinkedFunctionsToIntercept(kAsanIntercepts, block_graph);
 
-  // We only need to add stubs for PE images. COFF images use direct references,
-  // and the linker takes care of dragging in the appropriate code for us.
-  if (block_graph->image_format() == BlockGraph::PE_IMAGE) {
-    // Create the hook stub for read/write instructions.
-    BlockGraph::Reference read_write_hook;
-    if (!CreateHooksStub(block_graph, kAsanHookStubName,
-                         AsanBasicBlockTransform::kReadAccess,
-                         &read_write_hook)) {
+  // We don't need to import any hooks in hot patching mode.
+  if (!hot_patching_) {
+    if (!ImportAsanCheckAccessHooks(kAsanHookStubName,
+                                    use_liveness_analysis(),
+                                    &import_module,
+                                    &check_access_hooks_ref_,
+                                    policy,
+                                    block_graph,
+                                    header_block)) {
       return false;
     }
-
-    // Create the hook stub for strings instructions.
-    BlockGraph::Reference instr_hook;
-    if (!CreateHooksStub(block_graph, kAsanHookStubName,
-                         AsanBasicBlockTransform::kInstrAccess,
-                         &instr_hook)) {
-      return false;
-    }
-
-    // Map each memory access kind to an appropriate stub.
-    default_stub_map[AsanBasicBlockTransform::kReadAccess] = read_write_hook;
-    default_stub_map[AsanBasicBlockTransform::kWriteAccess] = read_write_hook;
-    default_stub_map[AsanBasicBlockTransform::kInstrAccess] = instr_hook;
-    default_stub_map[AsanBasicBlockTransform::kRepzAccess] = instr_hook;
-    default_stub_map[AsanBasicBlockTransform::kRepnzAccess] = instr_hook;
   }
 
-  // Add an import entry for the Asan runtime.
-  ImportedModule import_module(asan_dll_name_, kDateInThePast);
-
-  // Import the hooks for the read/write accesses.
-  for (int access_size = 1; access_size <= 32; access_size *= 2) {
-    MemoryAccessInfo read_info =
-        { AsanBasicBlockTransform::kReadAccess, access_size, 0, true };
-    access_hook_param_vec.push_back(read_info);
-    if (use_liveness_analysis()) {
-      read_info.save_flags = false;
-      access_hook_param_vec.push_back(read_info);
-    }
-
-    MemoryAccessInfo write_info =
-        { AsanBasicBlockTransform::kWriteAccess, access_size, 0, true };
-    access_hook_param_vec.push_back(write_info);
-    if (use_liveness_analysis()) {
-      write_info.save_flags = false;
-      access_hook_param_vec.push_back(write_info);
-    }
-  }
-
-  // Import the hooks for the read/write 10-bytes accesses.
-  MemoryAccessInfo read_info_10 =
-      { AsanBasicBlockTransform::kReadAccess, 10, 0, true };
-  access_hook_param_vec.push_back(read_info_10);
-  if (use_liveness_analysis()) {
-    read_info_10.save_flags = false;
-    access_hook_param_vec.push_back(read_info_10);
-  }
-
-  MemoryAccessInfo write_info_10 =
-      { AsanBasicBlockTransform::kWriteAccess, 10, 0, true };
-  access_hook_param_vec.push_back(write_info_10);
-  if (use_liveness_analysis()) {
-    write_info_10.save_flags = false;
-    access_hook_param_vec.push_back(write_info_10);
-  }
-
-  // Import the hooks for strings/prefix memory accesses.
-  const _InstructionType strings[] = { I_CMPS, I_MOVS, I_STOS };
-  int strings_length = sizeof(strings)/sizeof(_InstructionType);
-
-  for (int access_size = 1; access_size <= 4; access_size *= 2) {
-    for (int inst = 0; inst < strings_length; ++inst) {
-      MemoryAccessInfo repz_inst_info = {
-         AsanBasicBlockTransform::kRepzAccess,
-         access_size,
-         strings[inst],
-         true
-      };
-      access_hook_param_vec.push_back(repz_inst_info);
-
-      MemoryAccessInfo inst_info = {
-          AsanBasicBlockTransform::kInstrAccess,
-          access_size,
-          strings[inst],
-          true
-      };
-      access_hook_param_vec.push_back(inst_info);
-    }
-  }
-
-  if (!AddAsanCheckAccessHooks(access_hook_param_vec,
-                               default_stub_map,
-                               &import_module,
-                               &check_access_hooks_ref_,
-                               policy,
-                               block_graph,
-                               header_block)) {
-    return false;
-  }
   return true;
 }
 
@@ -1239,9 +1316,29 @@ bool AsanTransform::OnBlock(const TransformPolicyInterface* policy,
   transform.set_filter(filter());
   transform.set_instrumentation_rate(instrumentation_rate_);
 
-  if (!ApplyBasicBlockSubGraphTransform(
-          &transform, policy, block_graph, block, NULL)) {
-    return false;
+  if (!hot_patching_) {
+    if (!ApplyBasicBlockSubGraphTransform(
+            &transform, policy, block_graph, block, NULL)) {
+      return false;
+    }
+  } else {
+    // If we run in hot patching mode we just want to check if the block would
+    // be instrumented.
+    transform.set_dry_run(true);
+
+    HotPatchingAsanBasicBlockTransform hp_asan_bb_transform(&transform);
+
+    block_graph::BlockVector new_blocks;
+    if (!ApplyBasicBlockSubGraphTransform(
+            &hp_asan_bb_transform, policy, block_graph, block, &new_blocks)) {
+      return false;
+    }
+
+    // Save the block to be inserted into the hot patching section.
+    if (hp_asan_bb_transform.prepared_for_hot_patching()) {
+      CHECK_EQ(1U, new_blocks.size());
+      hot_patched_blocks_.push_back(new_blocks.front());
+    }
   }
 
   return true;
@@ -1276,11 +1373,23 @@ bool AsanTransform::PostBlockGraphIteration(
   if (heap_init_block_ != nullptr && crtheap_block_ != nullptr) {
     if (!PatchCRTHeapInitialization(block_graph, header_block, policy,
                                     heap_init_block_, crtheap_block_,
-                                    asan_dll_name_)) {
+                                    instrument_dll_name())) {
       return false;
     }
     heap_init_block_ = nullptr;
     crtheap_block_ = nullptr;
+  }
+
+  if (hot_patching_) {
+    pe::transforms::AddHotPatchingMetadataTransform hp_metadata_transform;
+    hp_metadata_transform.set_blocks_prepared(&hot_patched_blocks_);
+    if (!block_graph::ApplyBlockGraphTransform(&hp_metadata_transform,
+                                               policy,
+                                               block_graph,
+                                               header_block)) {
+      LOG(ERROR) << "Failed to insert hot patching metadata.";
+      return false;
+    }
   }
 
   return true;
@@ -1363,7 +1472,7 @@ bool AsanTransform::PeInterceptFunctions(
   // Keeps track of all imported modules with imports that we intercept.
   ScopedVector<ImportedModule> imported_modules;
 
-  ImportedModule asan_rtl(asan_dll_name_, kDateInThePast);
+  ImportedModule asan_rtl(instrument_dll_name(), kDateInThePast);
 
   // Determines what PE imports need to be intercepted, adding them to
   // |asan_rtl| and |import_name_index_map|.
