@@ -274,7 +274,7 @@ TEST_F(AsanTransformTest, SetDryRunFlag) {
   EXPECT_FALSE(bb_transform.dry_run());
 }
 
-TEST_F(AsanTransformTest, HotPatchingFlag) {
+TEST_F(AsanTransformTest, SetHotPatchingFlag) {
   EXPECT_FALSE(asan_transform_.hot_patching());
   asan_transform_.set_hot_patching(true);
   EXPECT_TRUE(asan_transform_.hot_patching());
@@ -282,18 +282,18 @@ TEST_F(AsanTransformTest, HotPatchingFlag) {
   EXPECT_FALSE(asan_transform_.hot_patching());
 }
 
-TEST_F(AsanTransformTest, InstrumentDllName) {
-  EXPECT_EQ(0, ::strcmp(kAsanRtlDll, asan_transform_.instrument_dll_name()));
+TEST_F(AsanTransformTest, SetInstrumentDLLName) {
+  EXPECT_EQ(kAsanRtlDll, asan_transform_.instrument_dll_name());
   asan_transform_.set_instrument_dll_name(kFooDll);
-  EXPECT_EQ(0, ::strcmp(kFooDll, asan_transform_.instrument_dll_name()));
+  EXPECT_EQ(kFooDll, asan_transform_.instrument_dll_name());
 }
 
-TEST_F(AsanTransformTest, InstrumentDllNameHotPatchingMode) {
+TEST_F(AsanTransformTest, SetInstrumentDLLNameHotPatchingMode) {
   // The default dll name is different in hot patching mode.
   asan_transform_.set_hot_patching(true);
-  EXPECT_EQ(0, ::strcmp(kHpAsanRtlDll, asan_transform_.instrument_dll_name()));
+  EXPECT_EQ(kHpAsanRtlDll, asan_transform_.instrument_dll_name());
   asan_transform_.set_instrument_dll_name(kFooDll);
-  EXPECT_EQ(0, ::strcmp(kFooDll, asan_transform_.instrument_dll_name()));
+  EXPECT_EQ(kFooDll, asan_transform_.instrument_dll_name());
 }
 
 TEST_F(AsanTransformTest, GetInstrumentationHappenedFlag) {
@@ -318,11 +318,6 @@ TEST_F(AsanTransformTest, SetInstrumentationRate) {
   EXPECT_EQ(0.0, bb_transform.instrumentation_rate());
   bb_transform.set_instrumentation_rate(0.5);
   EXPECT_EQ(0.5, bb_transform.instrumentation_rate());
-}
-
-TEST_F(AsanTransformTest, SetInstrumentDLLName) {
-  asan_transform_.set_instrument_dll_name("foo");
-  ASSERT_EQ(strcmp(asan_transform_.instrument_dll_name(), "foo"), 0);
 }
 
 TEST_F(AsanTransformTest, SetInterceptCRTFuntionsFlag) {
@@ -1122,66 +1117,73 @@ void CheckImportsAreRedirectedPe(
   // Imports that should be redirected should all have matching asan imports.
   StringSet results;
   Intersect(imports, expected, &results);
-  EXPECT_EQ(results, expected);
+  if (!hot_patching) {
+    EXPECT_EQ(expected, results);
+  } else {
+    // These should not be present in hot patching mode.
+    EXPECT_TRUE(results.empty());
+  }
 
   // Some instrumentation functions (but not necessarily all of them) should be
-  // found.
-  // Instrumentation functions are not added in hot patching mode.
+  // found, unless we are in hot patching mode.
+  expected.clear();
+  expected.insert("asan_check_1_byte_read_access");
+  expected.insert("asan_check_2_byte_read_access");
+  expected.insert("asan_check_4_byte_read_access");
+  expected.insert("asan_check_8_byte_read_access");
+  expected.insert("asan_check_10_byte_read_access");
+  expected.insert("asan_check_16_byte_read_access");
+  expected.insert("asan_check_32_byte_read_access");
+  expected.insert("asan_check_1_byte_write_access");
+  expected.insert("asan_check_2_byte_write_access");
+  expected.insert("asan_check_4_byte_write_access");
+  expected.insert("asan_check_8_byte_write_access");
+  expected.insert("asan_check_10_byte_write_access");
+  expected.insert("asan_check_16_byte_write_access");
+  expected.insert("asan_check_32_byte_write_access");
+
+  expected.insert("asan_check_1_byte_read_access_no_flags");
+  expected.insert("asan_check_2_byte_read_access_no_flags");
+  expected.insert("asan_check_4_byte_read_access_no_flags");
+  expected.insert("asan_check_8_byte_read_access_no_flags");
+  expected.insert("asan_check_10_byte_read_access_no_flags");
+  expected.insert("asan_check_16_byte_read_access_no_flags");
+  expected.insert("asan_check_32_byte_read_access_no_flags");
+  expected.insert("asan_check_1_byte_write_access_no_flags");
+  expected.insert("asan_check_2_byte_write_access_no_flags");
+  expected.insert("asan_check_4_byte_write_access_no_flags");
+  expected.insert("asan_check_8_byte_write_access_no_flags");
+  expected.insert("asan_check_10_byte_write_access_no_flags");
+  expected.insert("asan_check_16_byte_write_access_no_flags");
+  expected.insert("asan_check_32_byte_write_access_no_flags");
+
+  expected.insert("asan_check_repz_4_byte_cmps_access");
+  expected.insert("asan_check_repz_4_byte_movs_access");
+  expected.insert("asan_check_repz_4_byte_stos_access");
+  expected.insert("asan_check_repz_2_byte_cmps_access");
+  expected.insert("asan_check_repz_2_byte_movs_access");
+  expected.insert("asan_check_repz_2_byte_stos_access");
+  expected.insert("asan_check_repz_1_byte_cmps_access");
+  expected.insert("asan_check_repz_1_byte_movs_access");
+  expected.insert("asan_check_repz_1_byte_stos_access");
+
+  expected.insert("asan_check_4_byte_cmps_access");
+  expected.insert("asan_check_4_byte_movs_access");
+  expected.insert("asan_check_4_byte_stos_access");
+  expected.insert("asan_check_2_byte_cmps_access");
+  expected.insert("asan_check_2_byte_movs_access");
+  expected.insert("asan_check_2_byte_stos_access");
+  expected.insert("asan_check_1_byte_cmps_access");
+  expected.insert("asan_check_1_byte_movs_access");
+  expected.insert("asan_check_1_byte_stos_access");
+
+  // We expect all of the instrumentation functions to have been added.
+  Intersect(imports, expected, &results);
   if (!hot_patching) {
-    expected.clear();
-    expected.insert("asan_check_1_byte_read_access");
-    expected.insert("asan_check_2_byte_read_access");
-    expected.insert("asan_check_4_byte_read_access");
-    expected.insert("asan_check_8_byte_read_access");
-    expected.insert("asan_check_10_byte_read_access");
-    expected.insert("asan_check_16_byte_read_access");
-    expected.insert("asan_check_32_byte_read_access");
-    expected.insert("asan_check_1_byte_write_access");
-    expected.insert("asan_check_2_byte_write_access");
-    expected.insert("asan_check_4_byte_write_access");
-    expected.insert("asan_check_8_byte_write_access");
-    expected.insert("asan_check_10_byte_write_access");
-    expected.insert("asan_check_16_byte_write_access");
-    expected.insert("asan_check_32_byte_write_access");
-
-    expected.insert("asan_check_1_byte_read_access_no_flags");
-    expected.insert("asan_check_2_byte_read_access_no_flags");
-    expected.insert("asan_check_4_byte_read_access_no_flags");
-    expected.insert("asan_check_8_byte_read_access_no_flags");
-    expected.insert("asan_check_10_byte_read_access_no_flags");
-    expected.insert("asan_check_16_byte_read_access_no_flags");
-    expected.insert("asan_check_32_byte_read_access_no_flags");
-    expected.insert("asan_check_1_byte_write_access_no_flags");
-    expected.insert("asan_check_2_byte_write_access_no_flags");
-    expected.insert("asan_check_4_byte_write_access_no_flags");
-    expected.insert("asan_check_8_byte_write_access_no_flags");
-    expected.insert("asan_check_10_byte_write_access_no_flags");
-    expected.insert("asan_check_16_byte_write_access_no_flags");
-    expected.insert("asan_check_32_byte_write_access_no_flags");
-
-    expected.insert("asan_check_repz_4_byte_cmps_access");
-    expected.insert("asan_check_repz_4_byte_movs_access");
-    expected.insert("asan_check_repz_4_byte_stos_access");
-    expected.insert("asan_check_repz_2_byte_cmps_access");
-    expected.insert("asan_check_repz_2_byte_movs_access");
-    expected.insert("asan_check_repz_2_byte_stos_access");
-    expected.insert("asan_check_repz_1_byte_cmps_access");
-    expected.insert("asan_check_repz_1_byte_movs_access");
-    expected.insert("asan_check_repz_1_byte_stos_access");
-
-    expected.insert("asan_check_4_byte_cmps_access");
-    expected.insert("asan_check_4_byte_movs_access");
-    expected.insert("asan_check_4_byte_stos_access");
-    expected.insert("asan_check_2_byte_cmps_access");
-    expected.insert("asan_check_2_byte_movs_access");
-    expected.insert("asan_check_2_byte_stos_access");
-    expected.insert("asan_check_1_byte_cmps_access");
-    expected.insert("asan_check_1_byte_movs_access");
-    expected.insert("asan_check_1_byte_stos_access");
-
-    // We expect all of the instrumentation functions to have been added.
-    Intersect(imports, expected, &results);
-    EXPECT_EQ(results, expected);
+    EXPECT_EQ(expected, results);
+  } else {
+    // These should not be present in hot patching mode.
+    EXPECT_TRUE(results.empty());
   }
 
   // We expect all of these statically linked CRT functions to be redirected.
@@ -1827,7 +1829,7 @@ TEST_F(AsanTransformTest, HotPatchingSection) {
   for (const auto& entry : block_graph_.blocks()) {
     const BlockGraph::Block* block = &entry.second;
 
-    // We check the padding_before to see if the block has been prepared for hot
+    // We check |padding_before| to see if the block has been prepared for hot
     // patching.
     size_t expected_padding = hot_patched_set_.count(block) ? 5U : 0U;
     EXPECT_EQ(expected_padding, block->padding_before());

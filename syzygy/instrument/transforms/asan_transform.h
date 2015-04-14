@@ -183,9 +183,9 @@ class AsanBasicBlockTransform
   DISALLOW_COPY_AND_ASSIGN(AsanBasicBlockTransform);
 };
 
-// This runs Asan basic block transform in dry run mode and prepares the
-// block for hot patching if Asan would instrument it.
-// Making this a separate transform avoids running basic block decomposer twice.
+// This runs Asan basic block transform in dry run mode and prepares the block
+// for hot patching if Asan would instrument it. Doing these two things in a
+// single basic block transform avoids running basic block decomposer twice.
 class HotPatchingAsanBasicBlockTransform
     : public block_graph::transforms::NamedBasicBlockSubGraphTransformImpl<
           AsanBasicBlockTransform>,
@@ -258,7 +258,7 @@ class AsanTransform
   // |kSyzyAsanDll| will be is used if hot patching mode is disabled and
   // |kSyzyAsanHpDll| will be used in hot patching mode.
   // @returns the name of the runtime library of the instrumentation.
-  const char* instrument_dll_name() const {
+  base::StringPiece instrument_dll_name() const {
     if (asan_dll_name_.empty()) {
       if (!hot_patching_) {
         return kSyzyAsanDll;

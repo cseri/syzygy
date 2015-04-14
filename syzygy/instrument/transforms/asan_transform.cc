@@ -696,12 +696,14 @@ bool ImportAsanCheckAccessHooks(
 // @param asan_dll_name the name of the asan_rtl DLL we import.
 // @returns true on success, false otherwise.
 // @pre heap_init_block and crtheap_block must not be nullptr.
-bool PatchCRTHeapInitialization(BlockGraph* block_graph,
-                                BlockGraph::Block* header_block,
-                                const TransformPolicyInterface* policy,
-                                BlockGraph::Block* heap_init_block,
-                                BlockGraph::Block* crtheap_block,
-                                const char* instrument_dll_name) {
+bool PatchCRTHeapInitialization(
+    BlockGraph* block_graph,
+    BlockGraph::Block* header_block,
+    const TransformPolicyInterface* policy,
+    BlockGraph::Block* heap_init_block,
+    BlockGraph::Block* crtheap_block,
+    const base::StringPiece& heap_create_dll_name,
+    const base::StringPiece& heap_create_function_name) {
   DCHECK_NE(static_cast<BlockGraph*>(nullptr), block_graph);
   DCHECK_NE(static_cast<BlockGraph::Block*>(nullptr), header_block);
   DCHECK_NE(static_cast<const TransformPolicyInterface*>(nullptr), policy);
@@ -719,11 +721,14 @@ bool PatchCRTHeapInitialization(BlockGraph* block_graph,
 
   // Find the asan_HeapCreate import.
   PEAddImportsTransform find_imports;
-  ImportedModule kernel32_module(instrument_dll_name);
-  kernel32_module.AddSymbol("asan_HeapCreate", ImportedModule::kAlwaysImport);
+  ImportedModule kernel32_module(heap_create_dll_name);
+  kernel32_module.AddSymbol(heap_create_function_name,
+                            ImportedModule::kAlwaysImport);
   find_imports.AddModule(&kernel32_module);
   if (!find_imports.TransformBlockGraph(policy, block_graph, header_block)) {
-    LOG(ERROR) << "Unable to find the asan_HeapCreate import.";
+    LOG(ERROR) << "Unable to find the import " << heap_create_function_name
+               << " in " << heap_create_dll_name
+               << ", that is required to patch the CRT heap initialization.";
     return false;
   }
   BlockGraph::Reference heap_create_ref;
@@ -1371,9 +1376,15 @@ bool AsanTransform::PostBlockGraphIteration(
   // If the heap initialization blocks were encountered in the
   // PreBlockGraphIteration, patch them now.
   if (heap_init_block_ != nullptr && crtheap_block_ != nullptr) {
+    base::StringPiece heap_create_dll_name =
+        !hot_patching() ? instrument_dll_name() : "kernel32.dll";
+    base::StringPiece heap_create_function_name =
+        !hot_patching() ? "asan_HeapCreate" : "HeapCreate";
+
     if (!PatchCRTHeapInitialization(block_graph, header_block, policy,
                                     heap_init_block_, crtheap_block_,
-                                    instrument_dll_name())) {
+                                    heap_create_dll_name,
+                                    heap_create_function_name)) {
       return false;
     }
     heap_init_block_ = nullptr;
@@ -1474,28 +1485,31 @@ bool AsanTransform::PeInterceptFunctions(
 
   ImportedModule asan_rtl(instrument_dll_name(), kDateInThePast);
 
-  // Determines what PE imports need to be intercepted, adding them to
-  // |asan_rtl| and |import_name_index_map|.
-  if (!PeFindImportsToIntercept(use_interceptors_,
-                                intercepts,
-                                policy,
-                                block_graph,
-                                header_block,
-                                &imported_modules,
-                                &import_name_index_map,
-                                &asan_rtl)) {
-    return false;
+  // Dynamic imports are only intercepted when hot patching is inactive.
+  if (!hot_patching()) {
+    // Determines what PE imports need to be intercepted, adding them to
+    // |asan_rtl| and |import_name_index_map|.
+    if (!PeFindImportsToIntercept(use_interceptors_,
+                                  intercepts,
+                                  policy,
+                                  block_graph,
+                                  header_block,
+                                  &imported_modules,
+                                  &import_name_index_map,
+                                  &asan_rtl)) {
+      return false;
+    }
   }
-
-  // Keep track of how many import redirections are to be performed. This allows
-  // a minor optimization later on when there are none to be performed.
-  size_t import_redirection_count = asan_rtl.size();
 
   // Add the intercepts of statically linked functions to |asan_rtl| and
   // |import_name_index_map|.
   PeLoadInterceptsForStaticallyLinkedFunctions(static_intercepted_blocks_,
                                                &import_name_index_map,
                                                &asan_rtl);
+
+  // Keep track of how many import redirections are to be performed. This allows
+  // a minor optimization later on when there are none to be performed.
+  size_t import_redirection_count = asan_rtl.size();
 
   // If no imports were found at all, then there are no redirections to perform.
   if (asan_rtl.size() == 0)
