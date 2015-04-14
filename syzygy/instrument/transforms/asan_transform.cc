@@ -788,7 +788,8 @@ bool PeFindImportsToIntercept(bool use_interceptors,
                               BlockGraph::Block* header_block,
                               ScopedVector<ImportedModule>* imported_modules,
                               ImportNameIndexMap* import_name_index_map,
-                              ImportedModule* asan_rtl) {
+                              ImportedModule* asan_rtl,
+                              bool hot_patching) {
   DCHECK_NE(reinterpret_cast<AsanIntercept*>(NULL), intercepts);
   DCHECK_NE(reinterpret_cast<TransformPolicyInterface*>(NULL), policy);
   DCHECK_NE(reinterpret_cast<BlockGraph*>(NULL), block_graph);
@@ -847,7 +848,9 @@ bool PeFindImportsToIntercept(bool use_interceptors,
       DCHECK(import_name_index_map->find(function_name) ==
                  import_name_index_map->end());
 
-      std::string asan_function_name = kUndecoratedAsanInterceptPrefix;
+      std::string asan_function_name = !hot_patching
+          ? kUndecoratedAsanInterceptPrefix
+          : kUndecoratedHotPatchingAsanInterceptPrefix;
       asan_function_name += function_name;
       size_t index = asan_rtl->AddSymbol(asan_function_name,
                                          ImportedModule::kAlwaysImport);
@@ -867,7 +870,8 @@ bool PeFindImportsToIntercept(bool use_interceptors,
 void PeLoadInterceptsForStaticallyLinkedFunctions(
     const AsanTransform::BlockSet& static_blocks,
     ImportNameIndexMap* import_name_index_map,
-    ImportedModule* asan_rtl) {
+    ImportedModule* asan_rtl,
+    bool hot_patching) {
   DCHECK_NE(static_cast<ImportNameIndexMap*>(nullptr), import_name_index_map);
   DCHECK_NE(static_cast<ImportedModule*>(nullptr), asan_rtl);
 
@@ -878,7 +882,9 @@ void PeLoadInterceptsForStaticallyLinkedFunctions(
       continue;
     }
 
-    std::string name = kUndecoratedAsanInterceptPrefix;
+    std::string name = !hot_patching
+        ? kUndecoratedAsanInterceptPrefix
+        : kUndecoratedHotPatchingAsanInterceptPrefix;
     name += block->name();
     size_t index = asan_rtl->AddSymbol(name, ImportedModule::kAlwaysImport);
     import_name_index_map->insert(std::make_pair(block->name(), index));
@@ -923,7 +929,8 @@ bool PeGetRedirectsForStaticallyLinkedFunctions(
     const ImportNameIndexMap& import_name_index_map,
     const ImportedModule& asan_rtl,
     BlockGraph* block_graph,
-    pe::ReferenceMap* reference_redirect_map) {
+    pe::ReferenceMap* reference_redirect_map,
+    bool hot_patching) {
   DCHECK_NE(reinterpret_cast<BlockGraph*>(NULL), block_graph);
   DCHECK_NE(reinterpret_cast<pe::ReferenceMap*>(NULL), reference_redirect_map);
 
@@ -937,7 +944,9 @@ bool PeGetRedirectsForStaticallyLinkedFunctions(
     ThunkMap::iterator thunk_it = thunk_map.find(block->name());
     if (thunk_it == thunk_map.end()) {
       // Generate the name of the thunk for this function.
-      std::string thunk_name = kUndecoratedAsanInterceptPrefix;
+      std::string thunk_name = !hot_patching
+          ? kUndecoratedAsanInterceptPrefix
+          : kUndecoratedHotPatchingAsanInterceptPrefix;
       thunk_name += block->name();
       thunk_name += "_thunk";
 
@@ -1376,10 +1385,11 @@ bool AsanTransform::PostBlockGraphIteration(
   // If the heap initialization blocks were encountered in the
   // PreBlockGraphIteration, patch them now.
   if (heap_init_block_ != nullptr && crtheap_block_ != nullptr) {
+    // We don't instrument HeapCreate in hot patching mode.
     base::StringPiece heap_create_dll_name =
-        !hot_patching() ? instrument_dll_name() : "kernel32.dll";
+        !hot_patching_ ? instrument_dll_name() : "kernel32.dll";
     base::StringPiece heap_create_function_name =
-        !hot_patching() ? "asan_HeapCreate" : "HeapCreate";
+        !hot_patching_ ? "asan_HeapCreate" : "HeapCreate";
 
     if (!PatchCRTHeapInitialization(block_graph, header_block, policy,
                                     heap_init_block_, crtheap_block_,
@@ -1496,7 +1506,8 @@ bool AsanTransform::PeInterceptFunctions(
                                   header_block,
                                   &imported_modules,
                                   &import_name_index_map,
-                                  &asan_rtl)) {
+                                  &asan_rtl,
+                                  hot_patching_)) {
       return false;
     }
   }
@@ -1505,7 +1516,8 @@ bool AsanTransform::PeInterceptFunctions(
   // |import_name_index_map|.
   PeLoadInterceptsForStaticallyLinkedFunctions(static_intercepted_blocks_,
                                                &import_name_index_map,
-                                               &asan_rtl);
+                                               &asan_rtl,
+                                               hot_patching_);
 
   // Keep track of how many import redirections are to be performed. This allows
   // a minor optimization later on when there are none to be performed.
@@ -1540,7 +1552,8 @@ bool AsanTransform::PeInterceptFunctions(
                                                     import_name_index_map,
                                                     asan_rtl,
                                                     block_graph,
-                                                    &reference_redirect_map)) {
+                                                    &reference_redirect_map,
+                                                    hot_patching_)) {
       return false;
     }
   }

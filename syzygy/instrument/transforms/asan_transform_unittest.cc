@@ -1186,19 +1186,22 @@ void CheckImportsAreRedirectedPe(
     EXPECT_TRUE(results.empty());
   }
 
+  // Hot patching mode uses a different prefix for static CRT intercepts.
+  std::string prefix = !hot_patching ? "asan_" : "hp_";
+
   // We expect all of these statically linked CRT functions to be redirected.
   expected.clear();
-  expected.insert("asan_memcpy");
-  expected.insert("asan_memmove");
-  expected.insert("asan_memset");
-  expected.insert("asan_memchr");
-  expected.insert("asan_strlen");
-  expected.insert("asan_strrchr");
-  expected.insert("asan_strncpy");
-  expected.insert("asan_strncat");
-  expected.insert("asan_wcsrchr");
-  expected.insert("asan_wcschr");
-  expected.insert("asan_wcsstr");
+  expected.insert(prefix + "memcpy");
+  expected.insert(prefix + "memmove");
+  expected.insert(prefix + "memset");
+  expected.insert(prefix + "memchr");
+  expected.insert(prefix + "strlen");
+  expected.insert(prefix + "strrchr");
+  expected.insert(prefix + "strncpy");
+  expected.insert(prefix + "strncat");
+  expected.insert(prefix + "wcsrchr");
+  expected.insert(prefix + "wcschr");
+  expected.insert(prefix + "wcsstr");
   Intersect(imports, expected, &results);
   EXPECT_FALSE(results.empty());
   EXPECT_EQ(results, expected);
@@ -1206,11 +1209,11 @@ void CheckImportsAreRedirectedPe(
   // The implementation of the interceptors for these functions isn't available
   // so we don't expect them to be redirected.
   StringSet not_expected;
-  not_expected.insert("asan_strcmp");
-  not_expected.insert("asan_strcspn");
-  not_expected.insert("asan_strspn");
-  not_expected.insert("asan_strstr");
-  not_expected.insert("asan_strpbrk");
+  not_expected.insert(prefix + "strcmp");
+  not_expected.insert(prefix + "strcspn");
+  not_expected.insert(prefix + "strspn");
+  not_expected.insert(prefix + "strstr");
+  not_expected.insert(prefix + "strpbrk");
   Intersect(imports, not_expected, &results);
   EXPECT_TRUE(results.empty());
 }
