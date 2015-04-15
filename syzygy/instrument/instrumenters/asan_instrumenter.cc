@@ -28,10 +28,6 @@ namespace {
 namespace instrument {
 namespace instrumenters {
 
-const char AsanInstrumenter::kAgentDllAsan[] = "syzyasan_rtl.dll";
-
-const char AsanInstrumenter::kAgentDllHpAsan[] = "syzyasan_hp.dll";
-
 AsanInstrumenter::AsanInstrumenter()
     : use_interceptors_(true),
       remove_redundant_checks_(true),
@@ -163,7 +159,9 @@ bool AsanInstrumenter::ParseAdditionalCommandLineArguments(
   // Set default agent dll name if none provided. This has to be done here
   // because ParseCommandLine expects agent_dll_ to be filled.
   if (agent_dll_.empty())
-    agent_dll_ = hot_patching_ ? kAgentDllHpAsan : kAgentDllAsan;
+    agent_dll_ = hot_patching_
+        ? instrument::transforms::AsanTransform::kSyzyAsanHpDll
+        : instrument::transforms::AsanTransform::kSyzyAsanDll;
 
   return true;
 }

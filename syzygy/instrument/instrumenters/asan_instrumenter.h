@@ -36,12 +36,6 @@ class AsanInstrumenter : public InstrumenterWithAgent {
   ~AsanInstrumenter() { }
 
  protected:
-  // The name of the agent for Asan instrumentation.
-  static const char kAgentDllAsan[];
-
-  // The name of the agent for hot patching Asan instrumentation.
-  static const char kAgentDllHpAsan[];
-
   // @name InstrumenterWithAgent overrides.
   // @{
   virtual bool ImageFormatIsSupported(ImageFormat image_format) OVERRIDE;

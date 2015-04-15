@@ -44,8 +44,6 @@ class TestAsanInstrumenter : public AsanInstrumenter {
   using AsanInstrumenter::input_image_path_;
   using AsanInstrumenter::input_pdb_path_;
   using AsanInstrumenter::instrumentation_rate_;
-  using AsanInstrumenter::kAgentDllAsan;
-  using AsanInstrumenter::kAgentDllHpAsan;
   using AsanInstrumenter::no_augment_pdb_;
   using AsanInstrumenter::no_strip_strings_;
   using AsanInstrumenter::output_image_path_;
@@ -154,7 +152,7 @@ TEST_F(AsanInstrumenterTest, ParseMinimalAsan) {
 
   EXPECT_EQ(abs_input_image_path_, instrumenter_.input_image_path_);
   EXPECT_EQ(output_image_path_, instrumenter_.output_image_path_);
-  EXPECT_EQ(std::string(TestAsanInstrumenter::kAgentDllAsan),
+  EXPECT_EQ(std::string(instrument::transforms::AsanTransform::kSyzyAsanDll),
             instrumenter_.agent_dll_);
   EXPECT_FALSE(instrumenter_.allow_overwrite_);
   EXPECT_FALSE(instrumenter_.no_augment_pdb_);
@@ -303,7 +301,7 @@ TEST_F(AsanInstrumenterTest, HotPatchingChangesDefaultAgentDll) {
 
   EXPECT_TRUE(instrumenter_.ParseCommandLine(&cmd_line_));
 
-  EXPECT_EQ(std::string(TestAsanInstrumenter::kAgentDllHpAsan),
+  EXPECT_EQ(std::string(instrument::transforms::AsanTransform::kSyzyAsanHpDll),
             instrumenter_.agent_dll_);
 }
 

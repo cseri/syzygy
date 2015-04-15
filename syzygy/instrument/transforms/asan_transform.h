@@ -211,7 +211,7 @@ class HotPatchingAsanBasicBlockTransform
   // Check if the block in the subgraph was prepared for hot patching during
   // the last run of TransformBasicBlockSubGraph.
   // @returns true if the prepared the block for hot patching, false if the
-  // block needs no Asan instrumentation.
+  //     block needs no Asan instrumentation.
   bool prepared_for_hot_patching() {
     return prepared_for_hot_patching_;
   }
@@ -255,7 +255,7 @@ class AsanTransform
     instrument_dll_name.CopyToString(&asan_dll_name_);
   }
   // Name of the asan_rtl DLL we import. This is empty by default, in that case
-  // |kSyzyAsanDll| will be is used if hot patching mode is disabled and
+  // |kSyzyAsanDll| will be used if hot patching mode is disabled and
   // |kSyzyAsanHpDll| will be used in hot patching mode.
   // @returns the name of the runtime library of the instrumentation.
   base::StringPiece instrument_dll_name() const {
@@ -304,15 +304,11 @@ class AsanTransform
 
   // Checks if the transform is in hot patching mode.
   // @returns true iff in hot patching mode.
-  bool hot_patching() {
+  bool hot_patching() const {
     return hot_patching_;
   }
   // If this flag is true, running the transformation prepares the module to
   // be used by the hot patching Asan runtime.
-  // First, this will run AsanBasicBlockTransform in dry run mode, and if
-  // the block needs Asan instrumentation it is prepared for hot patching
-  // (by adding padding and a two byte NOP instruction if needed) and added
-  // into the hot patching metadata stream.
   // @param hot_patching The new value of the flag.
   void set_hot_patching(bool hot_patching) {
     hot_patching_ = hot_patching;
