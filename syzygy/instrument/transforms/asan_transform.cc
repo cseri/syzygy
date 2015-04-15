@@ -31,6 +31,7 @@
 #include "syzygy/block_graph/typed_block.h"
 #include "syzygy/common/defs.h"
 #include "syzygy/instrument/transforms/asan_intercepts.h"
+#include "syzygy/instrument/transforms/entry_thunk_transform.h"
 #include "syzygy/pe/pe_utils.h"
 #include "syzygy/pe/transforms/add_hot_patching_metadata_transform.h"
 #include "syzygy/pe/transforms/coff_add_imports_transform.h"
@@ -1305,6 +1306,21 @@ bool AsanTransform::PreBlockGraphIteration(
                                     policy,
                                     block_graph,
                                     header_block)) {
+      return false;
+    }
+  }
+
+  // Redirect DllMain entry thunk in hot patching mode.
+  if (hot_patching_) {
+    EntryThunkTransform entry_thunk_tx;
+    entry_thunk_tx.set_instrument_unsafe_references(false);
+    entry_thunk_tx.set_only_instrument_module_entry(true);
+    entry_thunk_tx.set_instrument_dll_name(instrument_dll_name());
+    if (!block_graph::ApplyBlockGraphTransform(&entry_thunk_tx,
+                                               policy,
+                                               block_graph,
+                                               header_block)) {
+      LOG(ERROR) << "Failed to rewrite DLL entry thunk.";
       return false;
     }
   }
