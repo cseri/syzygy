@@ -254,21 +254,12 @@ class AsanTransform
   void set_instrument_dll_name(const base::StringPiece& instrument_dll_name) {
     instrument_dll_name.CopyToString(&asan_dll_name_);
   }
-  // Name of the asan_rtl DLL we import. This is empty by default, in that case
-  // |kSyzyAsanDll| will be used if hot patching mode is disabled and
-  // |kSyzyAsanHpDll| will be used in hot patching mode.
+  // Name of the asan_rtl DLL we import. The |instrument_dll_name_| member is
+  // empty by default, in that case |kSyzyAsanDll| will be returned if hot
+  // patching mode is disabled and |kSyzyAsanHpDll| will be returned in hot
+  // patching mode.
   // @returns the name of the runtime library of the instrumentation.
-  base::StringPiece instrument_dll_name() const {
-    if (asan_dll_name_.empty()) {
-      if (!hot_patching_) {
-        return kSyzyAsanDll;
-      } else {
-        return kSyzyAsanHpDll;
-      }
-    } else {
-      return asan_dll_name_.c_str();
-    }
-  }
+  base::StringPiece instrument_dll_name() const;
 
   bool debug_friendly() const { return debug_friendly_; }
   void set_debug_friendly(bool flag) { debug_friendly_ = flag; }

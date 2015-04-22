@@ -246,9 +246,7 @@ class AsanTransformTest : public testing::TestDllTransformTest {
 const BasicBlock::Size AsanTransformTest::kDataSize = 32;
 const uint8 AsanTransformTest::kBlockData[AsanTransformTest::kDataSize] = {};
 
-// The default names for the imported runtime libraries.
-const char kAsanRtlDll[] = "syzyasan_rtl.dll";
-const char kHpAsanRtlDll[] = "syzyasan_hp.dll";
+// Dummy library name to test |set_instrument_dll_name|.
 const char kFooDll[] = "foo.dll";
 
 }  // namespace
@@ -282,16 +280,17 @@ TEST_F(AsanTransformTest, SetHotPatchingFlag) {
   EXPECT_FALSE(asan_transform_.hot_patching());
 }
 
-TEST_F(AsanTransformTest, SetInstrumentDLLName) {
-  EXPECT_EQ(kAsanRtlDll, asan_transform_.instrument_dll_name());
+TEST_F(AsanTransformTest, SetInstrumentDllName) {
+  EXPECT_EQ(AsanTransform::kSyzyAsanDll, asan_transform_.instrument_dll_name());
   asan_transform_.set_instrument_dll_name(kFooDll);
   EXPECT_EQ(kFooDll, asan_transform_.instrument_dll_name());
 }
 
-TEST_F(AsanTransformTest, SetInstrumentDLLNameHotPatchingMode) {
+TEST_F(AsanTransformTest, SetInstrumentDllNameHotPatchingMode) {
   // The default dll name is different in hot patching mode.
   asan_transform_.set_hot_patching(true);
-  EXPECT_EQ(kHpAsanRtlDll, asan_transform_.instrument_dll_name());
+  EXPECT_EQ(AsanTransform::kSyzyAsanHpDll,
+            asan_transform_.instrument_dll_name());
   asan_transform_.set_instrument_dll_name(kFooDll);
   EXPECT_EQ(kFooDll, asan_transform_.instrument_dll_name());
 }
@@ -1058,7 +1057,7 @@ bool GetAsanHooksIATEntries(const PEImage &image,
   FunctionsIATAddressSet* hooks_iat_entries =
       reinterpret_cast<FunctionsIATAddressSet*>(cookie);
 
-  if (strcmp(kAsanRtlDll, module) != 0)
+  if (strcmp(AsanTransform::kSyzyAsanDll, module) != 0)
     return true;
 
   EXPECT_NE(static_cast<const char*>(NULL), name);
@@ -1087,8 +1086,12 @@ void CheckImportsAreRedirectedPe(
   ASSERT_TRUE(image.VerifyMagic());
   StringSet imports;
   EnumAsanImportsParams enum_asan_imports_params;
-  enum_asan_imports_params.imported_module_name =
-      hot_patching ? kHpAsanRtlDll : kAsanRtlDll;
+  if (!hot_patching) {
+    enum_asan_imports_params.imported_module_name = AsanTransform::kSyzyAsanDll;
+  } else {
+    enum_asan_imports_params.imported_module_name =
+        AsanTransform::kSyzyAsanHpDll;
+  }
   enum_asan_imports_params.imports = &imports;
   ASSERT_TRUE(image.EnumAllImports(&EnumAsanImports,
                                    &enum_asan_imports_params));
@@ -1453,7 +1456,7 @@ TEST_F(AsanTransformTest, AsanHooksAreStubbed) {
   for (; iid->FirstThunk; ++iid) {
     std::string module_name(reinterpret_cast<LPCSTR>(
         image.RVAToAddr(iid->Name)));
-    if (module_name == kAsanRtlDll)
+    if (module_name == AsanTransform::kSyzyAsanDll)
       ASSERT_NE(0u, iid->TimeDateStamp);
   }
 

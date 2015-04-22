@@ -158,10 +158,13 @@ bool AsanInstrumenter::ParseAdditionalCommandLineArguments(
 
   // Set default agent dll name if none provided. This has to be done here
   // because ParseCommandLine expects agent_dll_ to be filled.
-  if (agent_dll_.empty())
-    agent_dll_ = hot_patching_
-        ? instrument::transforms::AsanTransform::kSyzyAsanHpDll
-        : instrument::transforms::AsanTransform::kSyzyAsanDll;
+  if (agent_dll_.empty()) {
+    if (!hot_patching_) {
+      agent_dll_ = instrument::transforms::AsanTransform::kSyzyAsanDll;
+    } else {
+      agent_dll_ = instrument::transforms::AsanTransform::kSyzyAsanHpDll;
+    }
+  }
 
   return true;
 }
