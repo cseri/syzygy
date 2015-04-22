@@ -128,7 +128,7 @@ const char kUndecoratedAsanInterceptPrefix[] = "asan_";
 const char kDecoratedAsanInterceptPrefix[] = "_asan";
 const char kDecoratedImportPrefix[] = "__imp_";
 
-const char kUndecoratedHotPatchingAsanInterceptPrefix[] = "hp_";
+const char kUndecoratedHotPatchingAsanInterceptPrefix[] = "hp_asan_";
 
 }  // namespace transforms
 }  // namespace instrument
