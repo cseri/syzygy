@@ -1190,7 +1190,7 @@ void CheckImportsAreRedirectedPe(
   }
 
   // Hot patching mode uses a different prefix for static CRT intercepts.
-  std::string prefix = !hot_patching ? "asan_" : "hp_";
+  std::string prefix = !hot_patching ? "asan_" : "hp_asan_";
 
   // We expect all of these statically linked CRT functions to be redirected.
   expected.clear();
