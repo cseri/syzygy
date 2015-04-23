@@ -20,6 +20,11 @@
 
 #include "syzygy/block_graph/block_graph.h"
 
+#include "base/strings/string_piece.h"
+#include "base/strings/stringprintf.h"
+#include "base/callback.h"
+#include <string>
+
 namespace pe {
 
 // @name Operations on PE/COFF headers.
@@ -190,6 +195,18 @@ typedef std::map<ReferenceDest, ReferenceDest> ReferenceMap;
 // @param dst The redirected destination to be referred to.
 // @param redirects A map of original to redirected destinations.
 void RedirectReferences(const ReferenceMap& redirects);
+
+typedef base::Callback<block_graph::BlockGraph::Block*
+    (block_graph::BlockGraph::BlockType type,
+     core::RelativeAddress address,
+     block_graph::BlockGraph::Size size,
+     const base::StringPiece& name)> BlockCreatorCallback; 
+
+bool CreateSectionGapBlocks(const IMAGE_SECTION_HEADER* header,
+                            block_graph::BlockGraph::BlockType block_type,
+                            block_graph::BlockGraph::AddressSpace* image_,
+                            size_t size_of_image_,
+                            BlockCreatorCallback cb);
 
 }  // namespace pe
 

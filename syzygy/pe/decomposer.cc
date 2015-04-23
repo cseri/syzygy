@@ -1378,7 +1378,13 @@ bool Decomposer::CreateGapBlocks() {
         continue;
     }
 
-    if (!CreateSectionGapBlocks(header, type)) {
+    if (!CreateSectionGapBlocks(
+        header,
+        type,
+        image_,
+        image_file_.nt_headers()->OptionalHeader.SizeOfImage,
+        base::Bind(&Decomposer::CreateBlock, base::Unretained(this))
+        )) {
       LOG(ERROR) << "Unable to create gap blocks for " << section_type
                  << " section \"" << header->Name << "\".";
       return false;
@@ -2124,84 +2130,6 @@ Block* Decomposer::CreateBlockOrFindCoveringPeBlock(
   return CreateBlock(type, addr, size, name);
 }
 
-bool Decomposer::CreateGapBlock(BlockType block_type,
-                                   RelativeAddress address,
-                                   BlockGraph::Size size) {
-  Block* block = CreateBlock(block_type, address, size,
-      base::StringPrintf("Gap Block 0x%08X", address.value()).c_str());
-  if (block == NULL) {
-    LOG(ERROR) << "Unable to create gap block.";
-    return false;
-  }
-  block->set_attribute(BlockGraph::GAP_BLOCK);
 
-  return true;
-}
-
-bool Decomposer::CreateSectionGapBlocks(const IMAGE_SECTION_HEADER* header,
-                                           BlockType block_type) {
-  RelativeAddress section_begin(header->VirtualAddress);
-  RelativeAddress section_end(section_begin + header->Misc.VirtualSize);
-  RelativeAddress image_end(
-      image_file_.nt_headers()->OptionalHeader.SizeOfImage);
-
-  // Search for the first and last blocks interesting from the start and end
-  // of the section to the end of the image.
-  BlockGraph::AddressSpace::RangeMap::const_iterator it(
-      image_->address_space_impl().FindFirstIntersection(
-          BlockGraph::AddressSpace::Range(section_begin,
-                                          image_end - section_begin)));
-
-  BlockGraph::AddressSpace::RangeMap::const_iterator end =
-      image_->address_space_impl().end();
-  if (section_end < image_end) {
-    end = image_->address_space_impl().FindFirstIntersection(
-        BlockGraph::AddressSpace::Range(section_end,
-                                        image_end - section_end));
-  }
-
-  // The whole section is missing. Cover it with one gap block.
-  if (it == end)
-    return CreateGapBlock(
-        block_type, section_begin, section_end - section_begin);
-
-  // Create the head gap block if need be.
-  if (section_begin < it->first.start()) {
-    if (!CreateGapBlock(
-        block_type, section_begin, it->first.start() - section_begin)) {
-      return false;
-    }
-  }
-
-  // Now iterate the blocks and fill in gaps.
-  for (; it != end; ++it) {
-    const Block* block = it->second;
-    DCHECK_NE(reinterpret_cast<Block*>(NULL), block);
-    RelativeAddress block_end = it->first.start() + block->size();
-    if (block_end >= section_end)
-      break;
-
-    // Walk to the next address in turn.
-    BlockGraph::AddressSpace::RangeMap::const_iterator next = it;
-    ++next;
-    if (next == end) {
-      // We're at the end of the list. Create the tail gap block.
-      DCHECK_GT(section_end, block_end);
-      if (!CreateGapBlock(block_type, block_end, section_end - block_end))
-        return false;
-      break;
-    }
-
-    // Create the interstitial gap block.
-    if (block_end < next->first.start()) {
-      if (!CreateGapBlock(
-          block_type, block_end, next->first.start() - block_end)) {
-        return false;
-      }
-    }
-  }
-
-  return true;
-}
 
 }  // namespace pe

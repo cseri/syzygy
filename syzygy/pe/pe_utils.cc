@@ -545,4 +545,111 @@ void RedirectReferences(const ReferenceMap& redirects) {
   }
 }
 
+
+
+
+/******************************************************/
+
+
+typedef BlockGraph::Block Block;
+//TODO format this below
+
+
+namespace {
+
+bool CreateGapBlock(BlockGraph::BlockType block_type,
+                    RelativeAddress address,
+                    BlockGraph::Size size,
+                    BlockCreatorCallback block_creator) {
+  DCHECK_EQ(false, block_creator.is_null());
+
+  Block* block = block_creator.Run(block_type, address, size,
+      base::StringPrintf("Gap Block 0x%08X", address.value()).c_str());
+  if (block == NULL) {
+    LOG(ERROR) << "Unable to create gap block.";
+    return false;
+  }
+  block->set_attribute(BlockGraph::GAP_BLOCK);
+
+  return true;
+}
+
+}  // namespace
+
+bool CreateSectionGapBlocks(const IMAGE_SECTION_HEADER* header,
+                            BlockGraph::BlockType block_type,
+                            BlockGraph::AddressSpace* image,
+                            size_t size_of_image,
+                            BlockCreatorCallback block_creator) {
+  RelativeAddress section_begin(header->VirtualAddress);
+  RelativeAddress section_end(section_begin + header->Misc.VirtualSize);
+  RelativeAddress image_end(size_of_image);
+
+  // Search for the first and last blocks interesting from the start and end
+  // of the section to the end of the image.
+  BlockGraph::AddressSpace::RangeMap::const_iterator it(
+      image->address_space_impl().FindFirstIntersection(
+          BlockGraph::AddressSpace::Range(section_begin,
+                                          image_end - section_begin)));
+
+  BlockGraph::AddressSpace::RangeMap::const_iterator end =
+      image->address_space_impl().end();
+  if (section_end < image_end) {
+    end = image->address_space_impl().FindFirstIntersection(
+        BlockGraph::AddressSpace::Range(section_end,
+                                        image_end - section_end));
+  }
+
+  // The whole section is missing. Cover it with one gap block.
+  if (it == end)
+    return CreateGapBlock(
+        block_type, section_begin, section_end - section_begin, block_creator);
+
+  // Create the head gap block if need be.
+  if (section_begin < it->first.start()) {
+    if (!CreateGapBlock(block_type, section_begin,
+                        it->first.start() - section_begin, block_creator)) {
+      return false;
+    }
+  }
+
+  // Now iterate the blocks and fill in gaps.
+  for (; it != end; ++it) {
+    const Block* block = it->second;
+    DCHECK_NE(reinterpret_cast<Block*>(NULL), block);
+    RelativeAddress block_end = it->first.start() + block->size();
+    if (block_end >= section_end)
+      break;
+
+    // Walk to the next address in turn.
+    BlockGraph::AddressSpace::RangeMap::const_iterator next = it;
+    ++next;
+    if (next == end) {
+      // We're at the end of the list. Create the tail gap block.
+      DCHECK_GT(section_end, block_end);
+      if (!CreateGapBlock(block_type, block_end,
+                          section_end - block_end, block_creator))
+        return false;
+      break;
+    }
+
+    // Create the interstitial gap block.
+    if (block_end < next->first.start()) {
+      if (!CreateGapBlock(block_type, block_end,
+                          next->first.start() - block_end, block_creator)) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+
+
+
+
+
+
+
 }  // namespace pe

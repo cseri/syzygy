@@ -182,15 +182,6 @@ class Decomposer {
       RelativeAddress address,
       BlockGraph::Size size,
       const base::StringPiece& name);
-  // Creates a gap block of type @p block_type for the given range. For use by
-  // CreateSectionGapBlocks.
-  bool CreateGapBlock(BlockGraph::BlockType block_type,
-                      RelativeAddress address,
-                      BlockGraph::Size size);
-  // Create blocks of type @p block_type for any gaps in the image
-  // section represented by @p header.
-  bool CreateSectionGapBlocks(const IMAGE_SECTION_HEADER* header,
-                              BlockGraph::BlockType block_type);
   // @}
 
   // The PEFile that is being decomposed.
