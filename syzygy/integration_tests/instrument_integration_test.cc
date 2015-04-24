@@ -221,12 +221,20 @@ void ResetAsanErrors() {
   asan_error_count = 0;
 }
 
-void SetAsanDefaultCallBack(AsanErrorCallBack callback) {
-  HMODULE asan_module = GetModuleHandle(L"syzyasan_rtl.dll");
-  DCHECK(asan_module != NULL);
+void SetAsanDefaultCallBack(AsanErrorCallBack callback,
+                            bool hot_patching_asan) {
+  const wchar_t* dllname = nullptr;
+  if (!hot_patching_asan) {
+    dllname = L"syzyasan_rtl.dll";
+  } else {
+    dllname = L"syzyasan_hp.dll";
+  }
+
+  HMODULE asan_module = GetModuleHandle(dllname);
+  ASSERT_NE(nullptr, asan_module);
   AsanSetCallBack set_callback = reinterpret_cast<AsanSetCallBack>(
       ::GetProcAddress(asan_module, "asan_SetCallBack"));
-  DCHECK(set_callback != NULL);
+  ASSERT_NE(nullptr, set_callback);
 
   set_callback(callback);
 }
@@ -298,7 +306,8 @@ class InstrumentAppIntegrationTest : public testing::PELibUnitTest {
       : cmd_line_(base::FilePath(L"instrument.exe")),
         test_impl_(test_app_.implementation()),
         image_layout_(&block_graph_),
-        get_my_rva_(NULL) {
+        get_my_rva_(NULL),
+        hot_patching_asan_(false) {
   }
 
   void SetUp() {
@@ -484,7 +493,8 @@ class InstrumentAppIntegrationTest : public testing::PELibUnitTest {
                       size_t max_tries,
                       bool unload) {
     ResetAsanErrors();
-    EXPECT_NO_FATAL_FAILURE(SetAsanDefaultCallBack(AsanCallback));
+    EXPECT_NO_FATAL_FAILURE(SetAsanDefaultCallBack(AsanCallback,
+                                                   hot_patching_asan_));
 
     for (size_t i = 0; i < max_tries; ++i) {
       InvokeTestDllFunction(test);
@@ -707,14 +717,18 @@ class InstrumentAppIntegrationTest : public testing::PELibUnitTest {
     EXPECT_TRUE(AsanErrorCheck(testing::kAsanStrncatDstUseAfterFree,
         USE_AFTER_FREE, ASAN_WRITE_ACCESS, 1, 1, false));
 
-    EXPECT_TRUE(AsanErrorCheck(testing::kAsanReadFileOverflow,
-        HEAP_BUFFER_OVERFLOW, ASAN_WRITE_ACCESS, 1, 1, false));
-    EXPECT_TRUE(AsanErrorCheck(testing::kAsanReadFileUseAfterFree,
-        USE_AFTER_FREE, ASAN_WRITE_ACCESS, 1, 1, false));
-    EXPECT_TRUE(AsanErrorCheck(testing::kAsanWriteFileOverflow,
-        HEAP_BUFFER_OVERFLOW, ASAN_READ_ACCESS, 1, 1, false));
-    EXPECT_TRUE(AsanErrorCheck(testing::kAsanWriteFileUseAfterFree,
-        USE_AFTER_FREE, ASAN_READ_ACCESS, 1, 1, false));
+    if (!hot_patching_asan_) {
+      // TODO(cseri): enable these when system intercepts are implemented in
+      // hot patching mode.
+      EXPECT_TRUE(AsanErrorCheck(testing::kAsanReadFileOverflow,
+          HEAP_BUFFER_OVERFLOW, ASAN_WRITE_ACCESS, 1, 1, false));
+      EXPECT_TRUE(AsanErrorCheck(testing::kAsanReadFileUseAfterFree,
+          USE_AFTER_FREE, ASAN_WRITE_ACCESS, 1, 1, false));
+      EXPECT_TRUE(AsanErrorCheck(testing::kAsanWriteFileOverflow,
+          HEAP_BUFFER_OVERFLOW, ASAN_READ_ACCESS, 1, 1, false));
+      EXPECT_TRUE(AsanErrorCheck(testing::kAsanWriteFileUseAfterFree,
+          USE_AFTER_FREE, ASAN_READ_ACCESS, 1, 1, false));
+    }
 
     EXPECT_TRUE(AsanErrorCheck(testing::kAsanCorruptBlock,
         CORRUPT_BLOCK, ASAN_UNKNOWN_ACCESS, 0, 10, false));
@@ -1133,6 +1147,9 @@ class InstrumentAppIntegrationTest : public testing::PELibUnitTest {
   pe::ImageLayout image_layout_;
   block_graph::BlockGraph block_graph_;
   uint32 get_my_rva_;
+
+  // This is true if we test the hot patching mode of Asan.
+  bool hot_patching_asan_;
 };
 
 typedef std::map<std::string, size_t> FunctionOffsetMap;
@@ -1257,7 +1274,7 @@ void InstrumentAppIntegrationTest::AsanZebraHeapTest(bool enabled) {
 TEST_F(InstrumentAppIntegrationTest, AsanEndToEnd) {
   // Disable the heap checking as this is implies touching all the shadow bytes
   // and this make those tests really slow.
-  cmd_line_.AppendSwitchASCII("asan-rtl-options", "--no_check_heap_on_failure");
+  //cmd_line_.AppendSwitchASCII("asan-rtl-options", "--no_check_heap_on_failure");
   ASSERT_NO_FATAL_FAILURE(EndToEndTest("asan"));
   ASSERT_NO_FATAL_FAILURE(EndToEndCheckTestDll());
   ASSERT_NO_FATAL_FAILURE(AsanErrorCheckTestDll());
@@ -1593,6 +1610,18 @@ TEST_F(InstrumentAppIntegrationTest, BBEntryCoverageEndToEnd) {
   ASSERT_NO_FATAL_FAILURE(CoverageInvokeTestDll());
   ASSERT_NO_FATAL_FAILURE(StopService());
   ASSERT_NO_FATAL_FAILURE(CoverageCheckTestDll());
+}
+
+TEST_F(InstrumentAppIntegrationTest, HotPatchingAsanEndToEnd) {
+  hot_patching_asan_ = true;
+  cmd_line_.AppendSwitch("hot-patching");
+  // Disable the heap checking as this is implies touching all the shadow bytes
+  // and this make those tests really slow.
+  cmd_line_.AppendSwitchASCII("asan-rtl-options", "--no_check_heap_on_failure");
+  ASSERT_NO_FATAL_FAILURE(EndToEndTest("asan"));
+  ASSERT_NO_FATAL_FAILURE(EndToEndCheckTestDll());
+  ASSERT_NO_FATAL_FAILURE(AsanErrorCheckTestDll());
+  ASSERT_NO_FATAL_FAILURE(AsanErrorCheckInterceptedFunctions());
 }
 
 TEST_F(InstrumentAppIntegrationTest, ProfileEndToEnd) {

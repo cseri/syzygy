@@ -20,6 +20,7 @@ EXPORTS
   _indirect_penter_dllmain
 
   ; Function exposed for testing purposes.
+  asan_SetCallBack
   hp_asan_GetActiveHotPatchingAsanRuntime
 
   ; CRT Interceptor functions.
