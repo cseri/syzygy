@@ -21,19 +21,24 @@
 #ifndef SYZYGY_AGENT_ASAN_HOT_PATCHING_ASAN_RUNTIME_H_
 #define SYZYGY_AGENT_ASAN_HOT_PATCHING_ASAN_RUNTIME_H_
 
-#include <windows.h>
+#include <unordered_set>
 #include <string>
 #include <unordered_set>
 
+#include <windows.h>
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
+#include "syzygy/agent/asan/hot_patching_asan_iat_redirects.h"
+#include "syzygy/agent/asan/iat_patch_manager.h"
 #include "syzygy/agent/common/entry_frame.h"
+#include "syzygy/pe/hot_patching_writer.h"
 
 namespace agent {
 namespace asan {
 
 class AsanLogger;
+class AsanRuntime;
 
 class HotPatchingAsanRuntime {
  public:
@@ -58,6 +63,22 @@ class HotPatchingAsanRuntime {
   //     is not a problem for now, because we call this function under the
   //     loader lock.
   bool HotPatch(HINSTANCE instance);
+
+  // Called by the process attach in the DllMain of hot patching Asan
+  // instrumented modules.
+  // @param instance The handle to the module being attached to the process.
+  // NOTE: The entry thunk transform instruments more entry points of
+  //     modules, therefore this function may be called multiple times per
+  //     module.
+  void ProcessAttach(HINSTANCE instance);
+
+  // Called by the process detach in the DllMain of hot patching Asan
+  // instrumented modules.
+  // @param instance The handle to the module being detached from the process.
+  // NOTE: The entry thunk transform instruments more entry points of
+  //     modules, therefore this function may be called multiple times per
+  //     module.
+  void ProcessDetach(HINSTANCE instance);
 
   // Sets up the hot patching Asan runtime.
   void SetUp();
@@ -85,6 +106,11 @@ class HotPatchingAsanRuntime {
   // patch the same module twice.
   std::unordered_set<HMODULE> hot_patched_modules_;
 
+  pe::HotPatchingWriter writer;
+
+  IATPatchManager iat_redir;
+
+  AsanRuntime* asan_runtime_;
  private:
   friend struct DefaultSingletonTraits<HotPatchingAsanRuntime>;
   friend class HotPatchingAsanRuntimeTest;

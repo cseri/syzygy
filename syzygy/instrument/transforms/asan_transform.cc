@@ -299,6 +299,9 @@ void InjectAsanHook(BasicBlockAssembler* bb_asm,
     // In PE images the hooks are brought in as imports, so they are indirect
     // references.
     bb_asm->call(Operand(Displacement(hook->referenced(), hook->offset())));
+  } else if (image_format == BlockGraph::PE_IN_MEMORY_IMAGE) {
+    // In hot patching mode we want to jump directly.
+    bb_asm->call(Immediate(hook->referenced(), hook->offset()));
   } else {
     DCHECK_EQ(BlockGraph::COFF_IMAGE, image_format);
     // In COFF images the hooks are brought in as symbols, so they are direct

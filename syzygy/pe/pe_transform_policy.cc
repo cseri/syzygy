@@ -386,8 +386,8 @@ bool PETransformPolicy::CodeBlockReferrersAreClConsistent(
 
   // If there are leftover data labels that have not been referenced then we
   // are not consistent with CL.EXE compiled code.
-  if (!data_label_offsets.empty())
-    return false;
+  /*if (!data_label_offsets.empty())
+    return false;*/
 
   return true;
 }

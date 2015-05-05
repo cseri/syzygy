@@ -1191,8 +1191,12 @@ bool BlockBuilder::Merge(BasicBlockSubGraph* subgraph) {
   if (!context.GenerateBlocks(*subgraph))
     return false;
 
-  context.TransferReferrers(subgraph);
-  context.RemoveOriginalBlock(subgraph);
+  // We should not change blocks of hot patching images.
+  // TODO(cseri): Checking hot patching flag on block would also be an option.
+  //if (block_graph_->image_format() != BlockGraph::PE_HOT_PATCHING_IMAGE) {
+    context.TransferReferrers(subgraph);
+    context.RemoveOriginalBlock(subgraph);
+  //}
 
   // Track the newly created blocks.
   new_blocks_.reserve(new_blocks_.size() + context.new_blocks().size());
