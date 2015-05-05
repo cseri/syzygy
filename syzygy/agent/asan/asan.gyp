@@ -312,6 +312,7 @@
       ],
       'dependencies': [
         'syzyasan_rtl_lib',
+        '<(src)/syzygy/instrument/instrument.gyp:instrument_lib',
         '<(src)/syzygy/trace/client/client.gyp:rpc_client_lib',
         '<(src)/syzygy/trace/common/common.gyp:trace_common_lib',
         '<(src)/syzygy/trace/rpc/rpc.gyp:logger_rpc_lib',

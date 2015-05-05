@@ -60,10 +60,6 @@ class HotPatchingAsanRelinkHelper : public testing::PELibUnitTest {
     ASSERT_NO_FATAL_FAILURE(CheckTestDll(hp_test_dll_path_));
   }
 
-  // The module handle of the loaded hot patching Asan transformed
-  // test_dll.dll.
-  testing::ScopedHMODULE module_;
-
   pe::PETransformPolicy policy_;
   pe::PERelinker relinker_;
 
@@ -134,18 +130,21 @@ TEST_F(HotPatchingAsanRuntimeTest, TestRuntime) {
 
   // Load hot patched library into memory. This should construct a runtime
   // that we can query.
-  relink_helper.LoadTestDll(relink_helper.hp_test_dll_path_,
-                            &relink_helper.module_);
+  testing::ScopedHMODULE module;
+  relink_helper.LoadTestDll(relink_helper.hp_test_dll_path_, &module);
 
   // The hot patching Asan runtime must have been activated by loading the
   // instrumented dll.
-  ASSERT_EQ(1U, runtime_->hot_patched_modules().count(relink_helper.module_));
+  ASSERT_EQ(1U, runtime_->hot_patched_modules().count(module));
 
-  // The module is already hot patched, this is essentially a no-op.
-  ASSERT_TRUE(runtime_->HotPatch(relink_helper.module_));
+  // The module is already hot patched, this is a no-op.
+  // NOTE: Calling the |HotPatch| function like this is extremely dangerous
+  //     because it uses the code from the unittest executable and global
+  //     variables will have two instances and the incorrect one will be used!
+  ASSERT_TRUE(runtime_->HotPatch(module));
 
   // The test module should remain in set of hot patched modules.
-  ASSERT_EQ(1U, runtime_->hot_patched_modules().count(relink_helper.module_));
+  ASSERT_EQ(1U, runtime_->hot_patched_modules().count(module));
 }
 
 }  // namespace asan
