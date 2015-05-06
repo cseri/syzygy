@@ -305,6 +305,8 @@
         'asan_hp_crt_interceptors.h',
         'iat_patch_manager.cc',
         'iat_patch_manager.h',
+        'hot_patching_asan_iat_redirects.cc',
+        'hot_patching_asan_iat_redirects.h',
         'hot_patching_asan_runtime.cc',
         'hot_patching_asan_runtime.h',
       ],
