@@ -20,9 +20,11 @@
 namespace agent {
 namespace asan {
 
+// The list of import address table entries that needs to be redirected
+// upon activating the hot patching Asan runtime on a module.
 IATPatchManager::IATRedirectRule kHotPatchingAsanIATRedirects[];
 
 }  // namespace asan
 }  // namespace agent
 
-#endif  // SYZYGY_AGENT_ASAN_HP_IAT_REDIRECTS_H_
+#endif  // SYZYGY_AGENT_ASAN_HOT_PATCHING_ASAN_IAT_REDIRECTS_H_

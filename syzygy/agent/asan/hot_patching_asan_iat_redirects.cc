@@ -14,8 +14,8 @@
 
 #include "syzygy/agent/asan/hot_patching_asan_iat_redirects.h"
 
-#include "syzygy/agent/asan/asan_rtl_impl.h"
 #include "syzygy/agent/asan/asan_crt_interceptors.h"
+#include "syzygy/agent/asan/asan_rtl_impl.h"
 
 namespace agent {
 namespace asan {
