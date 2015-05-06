@@ -303,6 +303,8 @@
       'sources': [
         'asan_hp_crt_interceptors.cc',
         'asan_hp_crt_interceptors.h',
+        'hot_patching_asan_iat_redirects.cc',
+        'hot_patching_asan_iat_redirects.h',
         'hot_patching_asan_runtime.cc',
         'hot_patching_asan_runtime.h',
       ],
