@@ -77,7 +77,7 @@ TEST(IATPatchManagerTest, TestDll) {
       testing::GetExeRelativePath(L"test_dll.dll");
   testing::ScopedHMODULE test_dll(
       ::LoadLibrary(test_dll_path.value().c_str()));
-  ASSERT_NE(nullptr, test_dll.get());
+  ASSERT_NE(nullptr, static_cast<HMODULE>(test_dll));
 
   // test_dll.dll imports functions from export_dll.dll. Redirect those imports.
   IATPatchManager iat_manager;
