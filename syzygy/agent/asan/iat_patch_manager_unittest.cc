@@ -16,8 +16,8 @@
 
 #include <windows.h>
 
-#include "gtest/gtest.h"
 #include "base/win/pe_image.h"
+#include "gtest/gtest.h"
 #include "syzygy/pe/unittest_util.h"
 
 namespace agent {

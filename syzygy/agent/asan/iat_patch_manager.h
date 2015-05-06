@@ -51,6 +51,8 @@ class IATPatchManager {
   // @param entries An array of IATRedirectRule structures that describe the
   //     functions that need to be redirected. This array must be terminated
   //     by an entry that has nullptr for |import_name|.
+  // @returns the number of redirects done. This can be less than the number of
+  //     elements in |entries| if module does not import all functions.
   size_t RedirectImports(HMODULE module,
                          const IATRedirectRule* entries);
 
