@@ -303,6 +303,8 @@
       'sources': [
         'asan_hp_crt_interceptors.cc',
         'asan_hp_crt_interceptors.h',
+        'iat_patch_manager.cc',
+        'iat_patch_manager.h',
         'hot_patching_asan_runtime.cc',
         'hot_patching_asan_runtime.h',
       ],
@@ -365,6 +367,7 @@
       'target_name': 'syzyasan_hp_unittests',
       'type': 'executable',
       'sources': [
+        'iat_patch_manager_unittest.cc',
         'hot_patching_asan_runtime_unittest.cc',
         '<(src)/base/test/run_all_unittests.cc',
       ],
