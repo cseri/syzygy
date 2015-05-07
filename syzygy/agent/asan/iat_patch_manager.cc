@@ -16,6 +16,7 @@
 
 #include <new>
 
+#include "base/logging.h"
 #include "base/win/iat_patch_function.h"
 
 namespace agent {
@@ -28,6 +29,9 @@ IATPatchManager::~IATPatchManager() { }
 size_t IATPatchManager::RedirectImports(
     HMODULE module,
     const IATRedirectRule* entries) {
+  DCHECK_NE(static_cast<HMODULE>(nullptr), module);
+  DCHECK_NE(static_cast<IATRedirectRule*>(nullptr), entries);
+
   size_t redirect_count = 0;
 
   for (const IATRedirectRule* current_entry = entries;
@@ -37,7 +41,7 @@ size_t IATPatchManager::RedirectImports(
     // destructor. To circumvent calling its destructor we use placement new
     // to allocate the object.
     // TODO(cseri): Please clean this up.
-    uint8 buffer[sizeof(base::win::IATPatchFunction)];
+    uint8 buffer[sizeof(base::win::IATPatchFunction)] = {};
     base::win::IATPatchFunction* iat_patcher =
         new (static_cast<void*>(buffer)) base::win::IATPatchFunction();
 
